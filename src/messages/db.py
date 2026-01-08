@@ -1,0 +1,586 @@
+"""Database connection and queries for Messages.app data."""
+
+import fnmatch
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+from typing import Iterator, Optional
+
+from .contacts import get_contact_name
+from .models import (
+    EFFECT_MAP,
+    REACTION_TYPE_MAP,
+    Attachment,
+    Chat,
+    ChatSummary,
+    EditRecord,
+    Handle,
+    Message,
+    Reaction,
+    apple_time_to_datetime,
+    datetime_to_apple_time,
+)
+from .phone import get_system_region, phone_match
+
+DEFAULT_DB_PATH = Path.home() / "Library" / "Messages" / "chat.db"
+
+
+class MessagesDB:
+    """Read-only interface to the Messages database."""
+
+    def __init__(self, path: Path | str | None = None, resolve_contacts: bool = True):
+        """Initialize database connection.
+
+        Args:
+            path: Path to chat.db. Defaults to ~/Library/Messages/chat.db
+            resolve_contacts: If True, resolve phone/email to contact names
+        """
+        self.path = Path(path) if path else DEFAULT_DB_PATH
+        self.resolve_contacts = resolve_contacts
+        self._conn: sqlite3.Connection | None = None
+        self._region: str | None = None
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """Get database connection, creating if needed."""
+        if self._conn is None:
+            if not self.path.exists():
+                raise FileNotFoundError(f"Database not found: {self.path}")
+            try:
+                self._conn = sqlite3.connect(
+                    f"file:{self.path}?mode=ro",
+                    uri=True,
+                    check_same_thread=False,
+                )
+                self._conn.row_factory = sqlite3.Row
+            except sqlite3.OperationalError as e:
+                if "unable to open" in str(e).lower():
+                    raise PermissionError(
+                        "Cannot read Messages database. "
+                        "Grant Full Disk Access to Terminal in "
+                        "System Settings > Privacy & Security > Full Disk Access"
+                    ) from e
+                raise
+        return self._conn
+
+    @property
+    def region(self) -> str:
+        """User's region code for phone number parsing."""
+        if self._region is None:
+            self._region = get_system_region()
+        return self._region
+
+    def _resolve_handle(self, handle_id: Optional[int]) -> Optional[Handle]:
+        """Look up a handle by ID and optionally resolve contact name."""
+        if handle_id is None:
+            return None
+
+        cursor = self.conn.execute(
+            "SELECT ROWID, id, service FROM handle WHERE ROWID = ?",
+            (handle_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        display_name = None
+        if self.resolve_contacts:
+            display_name = get_contact_name(row["id"])
+
+        return Handle(
+            id=row["ROWID"],
+            identifier=row["id"],
+            service=row["service"],
+            display_name=display_name,
+        )
+
+    def _get_reactions_for_message(self, message_guid: str) -> list[Reaction]:
+        """Get all reactions for a message by its GUID."""
+        reactions = []
+
+        cursor = self.conn.execute(
+            """
+            SELECT m.ROWID, m.date, m.associated_message_type, m.handle_id
+            FROM message m
+            WHERE m.associated_message_guid = ?
+              AND m.associated_message_type >= 2000
+              AND m.associated_message_type <= 2005
+            ORDER BY m.date
+            """,
+            (message_guid,),
+        )
+
+        for row in cursor:
+            reaction_type = REACTION_TYPE_MAP.get(row["associated_message_type"])
+            if reaction_type:
+                sender = self._resolve_handle(row["handle_id"])
+                if sender:
+                    reactions.append(
+                        Reaction(
+                            type=reaction_type,
+                            sender=sender,
+                            date=apple_time_to_datetime(row["date"]),
+                        )
+                    )
+
+        return reactions
+
+    def _row_to_message(self, row: sqlite3.Row, chat_id: int) -> Message:
+        """Convert a database row to a Message object."""
+        # Get reactions
+        reactions = self._get_reactions_for_message(row["guid"])
+
+        # Parse effect
+        effect = None
+        if row["expressive_send_style_id"]:
+            effect = EFFECT_MAP.get(row["expressive_send_style_id"])
+
+        # Get sender handle
+        sender = None
+        if not row["is_from_me"] and row["handle_id"]:
+            sender = self._resolve_handle(row["handle_id"])
+
+        # Get reply_to_id from thread_originator_guid
+        reply_to_id = None
+        if row["thread_originator_guid"]:
+            cursor = self.conn.execute(
+                "SELECT ROWID FROM message WHERE guid = ?",
+                (row["thread_originator_guid"],),
+            )
+            reply_row = cursor.fetchone()
+            if reply_row:
+                reply_to_id = reply_row["ROWID"]
+
+        return Message(
+            id=row["ROWID"],
+            chat_id=chat_id,
+            text=row["text"],
+            date=apple_time_to_datetime(row["date"]),
+            is_from_me=bool(row["is_from_me"]),
+            sender=sender,
+            has_attachments=bool(row["cache_has_attachments"]),
+            reactions=reactions,
+            effect=effect,
+            is_edited=bool(row["was_edited"]),
+            is_unsent=bool(row["is_unsent"]) if "is_unsent" in row.keys() else False,
+            reply_to_id=reply_to_id,
+        )
+
+    def chats(
+        self,
+        *,
+        service: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Iterator[ChatSummary]:
+        """List all chats, ordered by most recent activity.
+
+        Args:
+            service: Filter by service ("iMessage", "SMS", "RCS")
+            limit: Maximum number of results
+
+        Yields:
+            ChatSummary objects
+        """
+        query = """
+            SELECT
+                c.ROWID,
+                c.chat_identifier,
+                c.display_name,
+                c.service_name,
+                COUNT(cmj.message_id) as message_count,
+                MAX(m.date) as last_message_date
+            FROM chat c
+            LEFT JOIN chat_message_join cmj ON c.ROWID = cmj.chat_id
+            LEFT JOIN message m ON cmj.message_id = m.ROWID
+                AND (m.associated_message_type IS NULL OR m.associated_message_type = 0)
+        """
+        params: list = []
+
+        if service:
+            query += " WHERE c.service_name = ?"
+            params.append(service)
+
+        query += """
+            GROUP BY c.ROWID
+            ORDER BY last_message_date DESC NULLS LAST
+        """
+
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        cursor = self.conn.execute(query, params)
+
+        for row in cursor:
+            # Try to resolve display name for 1:1 chats
+            display_name = row["display_name"]
+            if not display_name and self.resolve_contacts:
+                display_name = get_contact_name(row["chat_identifier"])
+
+            yield ChatSummary(
+                id=row["ROWID"],
+                identifier=row["chat_identifier"],
+                display_name=display_name,
+                service=row["service_name"],
+                message_count=row["message_count"] or 0,
+                last_message_date=apple_time_to_datetime(row["last_message_date"]),
+            )
+
+    def chat(self, chat_id: int) -> Chat:
+        """Get a single chat by ID with full details.
+
+        Args:
+            chat_id: Chat ID
+
+        Returns:
+            Chat object with participants
+
+        Raises:
+            LookupError: If chat not found
+        """
+        cursor = self.conn.execute(
+            """
+            SELECT ROWID, chat_identifier, display_name, service_name
+            FROM chat
+            WHERE ROWID = ?
+            """,
+            (chat_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise LookupError(f"Chat {chat_id} not found")
+
+        # Get participants
+        participants = []
+        cursor = self.conn.execute(
+            """
+            SELECT h.ROWID, h.id, h.service
+            FROM handle h
+            JOIN chat_handle_join chj ON h.ROWID = chj.handle_id
+            WHERE chj.chat_id = ?
+            """,
+            (chat_id,),
+        )
+        for handle_row in cursor:
+            display_name = None
+            if self.resolve_contacts:
+                display_name = get_contact_name(handle_row["id"])
+            participants.append(
+                Handle(
+                    id=handle_row["ROWID"],
+                    identifier=handle_row["id"],
+                    service=handle_row["service"],
+                    display_name=display_name,
+                )
+            )
+
+        display_name = row["display_name"]
+        if not display_name and self.resolve_contacts:
+            display_name = get_contact_name(row["chat_identifier"])
+
+        return Chat(
+            id=row["ROWID"],
+            identifier=row["chat_identifier"],
+            display_name=display_name,
+            service=row["service_name"],
+            participants=participants,
+        )
+
+    def chat_by_identifier(self, identifier: str) -> Chat:
+        """Get a chat by phone number or email.
+
+        Uses smart phone number matching for international format support.
+
+        Args:
+            identifier: Phone number (any format) or email
+
+        Returns:
+            Chat object
+
+        Raises:
+            LookupError: If no matching chat found
+        """
+        cursor = self.conn.execute(
+            "SELECT ROWID, chat_identifier FROM chat"
+        )
+
+        for row in cursor:
+            if phone_match(identifier, row["chat_identifier"], self.region):
+                return self.chat(row["ROWID"])
+
+        # Also check handles in case the chat_identifier is different
+        cursor = self.conn.execute(
+            """
+            SELECT DISTINCT chj.chat_id, h.id
+            FROM handle h
+            JOIN chat_handle_join chj ON h.ROWID = chj.handle_id
+            """
+        )
+
+        for row in cursor:
+            if phone_match(identifier, row["id"], self.region):
+                return self.chat(row["chat_id"])
+
+        raise LookupError(f"Chat not found for identifier: {identifier}")
+
+    def messages(
+        self,
+        *,
+        chat_id: Optional[int] = None,
+        identifier: Optional[str] = None,
+        after: Optional[datetime] = None,
+        before: Optional[datetime] = None,
+        limit: int = 100,
+        offset: int = 0,
+        include_unsent: bool = True,
+    ) -> Iterator[Message]:
+        """List messages in chronological order (oldest first).
+
+        Args:
+            chat_id: Filter by chat ID
+            identifier: Filter by phone/email (alternative to chat_id)
+            after: Only messages after this date
+            before: Only messages before this date
+            limit: Maximum results (default 100)
+            offset: Skip first N results
+            include_unsent: Include messages that were unsent (default True)
+
+        Yields:
+            Message objects with reactions aggregated
+        """
+        # If identifier provided, find the chat first
+        if identifier and not chat_id:
+            chat = self.chat_by_identifier(identifier)
+            chat_id = chat.id
+
+        if not chat_id:
+            raise ValueError("Either chat_id or identifier must be provided")
+
+        cursor = self.conn.execute("SELECT 1 FROM chat WHERE ROWID = ?", (chat_id,))
+        if cursor.fetchone() is None:
+            raise LookupError(f"Chat {chat_id} not found")
+
+        if limit == 0:
+            return
+
+        query = """
+            SELECT m.ROWID, m.guid, m.text, m.date, m.is_from_me, m.handle_id,
+                   m.cache_has_attachments, m.expressive_send_style_id,
+                   m.was_edited, m.date_edited, m.thread_originator_guid,
+                   COALESCE(m.is_unsent, 0) as is_unsent
+            FROM message m
+            JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+            WHERE cmj.chat_id = ?
+              AND (m.associated_message_type IS NULL OR m.associated_message_type = 0)
+        """
+        params: list = [chat_id]
+
+        if not include_unsent:
+            query += " AND COALESCE(m.is_unsent, 0) = 0"
+
+        if after:
+            query += " AND m.date > ?"
+            params.append(datetime_to_apple_time(after))
+
+        if before:
+            query += " AND m.date < ?"
+            params.append(datetime_to_apple_time(before))
+
+        query += " ORDER BY m.date ASC"
+
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        if offset:
+            query += " OFFSET ?"
+            params.append(offset)
+
+        cursor = self.conn.execute(query, params)
+
+        for row in cursor:
+            yield self._row_to_message(row, chat_id)
+
+    def message(self, message_id: int) -> Message:
+        """Get a single message by ID with full details.
+
+        Args:
+            message_id: Message ID
+
+        Returns:
+            Message object
+
+        Raises:
+            LookupError: If message not found
+        """
+        cursor = self.conn.execute(
+            """
+            SELECT m.ROWID, m.guid, m.text, m.date, m.is_from_me, m.handle_id,
+                   m.cache_has_attachments, m.expressive_send_style_id,
+                   m.was_edited, m.date_edited, m.thread_originator_guid,
+                   COALESCE(m.is_unsent, 0) as is_unsent,
+                   cmj.chat_id
+            FROM message m
+            LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+            WHERE m.ROWID = ?
+            """,
+            (message_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise LookupError(f"Message {message_id} not found")
+
+        return self._row_to_message(row, row["chat_id"] or 0)
+
+    def search(
+        self,
+        query: str,
+        *,
+        chat_id: Optional[int] = None,
+        after: Optional[datetime] = None,
+        before: Optional[datetime] = None,
+        limit: int = 50,
+    ) -> Iterator[Message]:
+        """Search messages by text content.
+
+        Args:
+            query: Search string (case-insensitive substring match)
+            chat_id: Limit search to specific chat
+            after: Only messages after this date
+            before: Only messages before this date
+            limit: Maximum results (default 50)
+
+        Yields:
+            Message objects with matching text
+        """
+        sql = """
+            SELECT m.ROWID, m.guid, m.text, m.date, m.is_from_me, m.handle_id,
+                   m.cache_has_attachments, m.expressive_send_style_id,
+                   m.was_edited, m.date_edited, m.thread_originator_guid,
+                   COALESCE(m.is_unsent, 0) as is_unsent,
+                   cmj.chat_id
+            FROM message m
+            LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+            WHERE m.text LIKE ?
+              AND (m.associated_message_type IS NULL OR m.associated_message_type = 0)
+        """
+        params: list = [f"%{query}%"]
+
+        if chat_id:
+            sql += " AND cmj.chat_id = ?"
+            params.append(chat_id)
+
+        if after:
+            sql += " AND m.date > ?"
+            params.append(datetime_to_apple_time(after))
+
+        if before:
+            sql += " AND m.date < ?"
+            params.append(datetime_to_apple_time(before))
+
+        sql += " ORDER BY m.date DESC"
+
+        if limit:
+            sql += " LIMIT ?"
+            params.append(limit)
+
+        cursor = self.conn.execute(sql, params)
+
+        for row in cursor:
+            yield self._row_to_message(row, row["chat_id"] or 0)
+
+    def attachments(
+        self,
+        *,
+        chat_id: Optional[int] = None,
+        message_id: Optional[int] = None,
+        mime_type: Optional[str] = None,
+        limit: int = 100,
+        auto_download: bool = True,
+    ) -> Iterator[Attachment]:
+        """List attachments.
+
+        Args:
+            chat_id: Filter by chat
+            message_id: Filter by specific message
+            mime_type: Filter by type (e.g., "image/png", "image/*")
+            limit: Maximum results
+            auto_download: If True, download iCloud attachments automatically (not yet implemented)
+
+        Yields:
+            Attachment objects
+        """
+        query = """
+            SELECT DISTINCT a.ROWID, a.filename, a.mime_type, a.total_bytes,
+                   a.is_sticker, a.transfer_name, maj.message_id
+            FROM attachment a
+            JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
+        """
+        params: list = []
+        conditions = []
+
+        if message_id:
+            conditions.append("maj.message_id = ?")
+            params.append(message_id)
+
+        if chat_id:
+            query += " JOIN chat_message_join cmj ON maj.message_id = cmj.message_id"
+            conditions.append("cmj.chat_id = ?")
+            params.append(chat_id)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += " ORDER BY a.ROWID DESC"
+
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        cursor = self.conn.execute(query, params)
+
+        for row in cursor:
+            # Check mime_type filter (supports wildcards like "image/*")
+            if mime_type:
+                row_mime = row["mime_type"] or ""
+                if not fnmatch.fnmatch(row_mime, mime_type):
+                    continue
+
+            # Use transfer_name as filename if filename is a path
+            filename = row["transfer_name"] or row["filename"] or ""
+            if "/" in filename:
+                filename = filename.split("/")[-1]
+
+            yield Attachment(
+                id=row["ROWID"],
+                message_id=row["message_id"],
+                filename=filename,
+                mime_type=row["mime_type"],
+                path=row["filename"] or "",
+                size=row["total_bytes"] or 0,
+                is_sticker=bool(row["is_sticker"]),
+            )
+
+    def download_attachment(self, attachment: Attachment) -> Path:
+        """Ensure an attachment is downloaded locally.
+
+        For iCloud-stored attachments, triggers download and waits.
+
+        Args:
+            attachment: Attachment to download
+
+        Returns:
+            Path to local file
+
+        Raises:
+            FileNotFoundError: If attachment cannot be downloaded
+        """
+        # Expand ~ in path
+        path = Path(attachment.path).expanduser()
+
+        if path.exists():
+            return path
+
+        # TODO: Implement iCloud download trigger
+        # For now, just raise if file doesn't exist
+        raise FileNotFoundError(f"Attachment not found locally: {path}")

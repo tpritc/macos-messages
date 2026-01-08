@@ -227,8 +227,9 @@ def messages_db(test_db_path, monkeypatch):
         "+447700900123": "John Smith",
         "jane@example.com": "Jane Email",
     }
+    # Patch where it's used (in db.py), not where it's defined
     monkeypatch.setattr(
-        "messages.contacts.get_contact_name",
+        "messages.db.get_contact_name",
         lambda x: contact_map.get(x)
     )
 
