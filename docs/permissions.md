@@ -45,9 +45,9 @@ For VS Code specifically:
 
 ---
 
-## Contacts Access (optional)
+## Contacts Access (automatic with Full Disk Access)
 
-macos-messages can look up phone numbers in your Contacts.app to show names instead of raw numbers. This makes the output much nicer to read:
+macos-messages can look up phone numbers in your Contacts to show names instead of raw numbers. This makes the output much nicer to read:
 
 ```
 # With Contacts access:
@@ -59,13 +59,11 @@ macos-messages can look up phone numbers in your Contacts.app to show names inst
 
 ### How it works
 
-The first time macos-messages tries to look up a contact, macOS will show a permission prompt asking if you want to allow access. Click **Allow** and you're set.
-
-If you deny the prompt (or just want to skip the whole thing), macos-messages will gracefully fall back to showing phone numbers and email addresses instead. It won't crash or complain.
+macos-messages reads directly from the Contacts database at `~/Library/Application Support/AddressBook/`. Since you've already granted Full Disk Access for Messages, Contacts lookup works automatically without any additional permissions needed.
 
 ### Skipping contact resolution
 
-If you'd rather see raw phone numbers, or you want to avoid the permission prompt entirely, you can disable contact resolution:
+If you'd rather see raw phone numbers, you can disable contact resolution:
 
 **From the CLI:**
 ```bash
@@ -108,17 +106,11 @@ messages --db /path/to/chat.db chats
 
 If you're seeing phone numbers instead of names:
 
-1. Check that you clicked Allow when macOS asked about Contacts access
-2. Look in System Settings → Privacy & Security → Contacts
-3. Make sure your terminal app has access enabled there
+1. Check that Full Disk Access is enabled for your terminal (this covers both Messages and Contacts)
+2. Try running `messages chats --limit 5` to see if names appear
+3. Make sure the contact actually has a phone number that matches (formats don't need to match exactly, we normalize them)
 
-If you want to reset and try again, you can clear the permission decision:
-
-```bash
-tccutil reset AddressBook com.apple.Terminal
-```
-
-(Replace `com.apple.Terminal` with your terminal's bundle ID if you're using something else.)
+If contacts still aren't resolving, the Contacts database might be in an unexpected location (e.g., if you're not using iCloud for contacts).
 
 ---
 
@@ -127,7 +119,7 @@ tccutil reset AddressBook com.apple.Terminal
 ### What macos-messages can access
 
 - `~/Library/Messages/chat.db` - Read-only access to your Messages database
-- Contacts.app - Read-only access to look up names (optional)
+- `~/Library/Application Support/AddressBook/` - Read-only access to your Contacts database (for name lookups)
 
 ### What it doesn't do
 

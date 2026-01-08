@@ -283,26 +283,34 @@ def phone_match(query: str, stored: str, default_region: str | None = None) -> b
 ### `messages/contacts.py`
 
 ```python
+from dataclasses import dataclass
 from typing import Optional
+
+@dataclass
+class Contact:
+    """A contact from the macOS Contacts database."""
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    nickname: Optional[str] = None
+    organization: Optional[str] = None
+
+    @property
+    def display_name(self) -> Optional[str]:
+        """Format as 'First Last' with fallbacks."""
+        ...
 
 def get_contact_name(identifier: str) -> Optional[str]:
     """
-    Look up a display name from macOS Contacts.app.
+    Look up a display name from macOS Contacts database.
 
-    Uses the identifier (phone number or email) to find the contact
-    and returns the display name matching Messages.app behavior:
-    - Nickname if set
-    - Otherwise first name (or full name depending on system settings)
+    Reads directly from ~/Library/Application Support/AddressBook/
+    and normalizes phone numbers for matching.
 
     Args:
         identifier: Phone number or email address
 
     Returns:
         Display name if found, None otherwise
-
-    Note:
-        May require Contacts permission on first use.
-        Returns None silently if permission denied.
     """
     ...
 ```

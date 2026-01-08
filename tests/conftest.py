@@ -280,14 +280,73 @@ def mock_region_gb(monkeypatch):
 
 
 @pytest.fixture
-def mock_contacts(monkeypatch):
-    """Mock contact resolution."""
-    contact_map = {
-        "+15551234567": "Jane Doe",
-        "+447700900123": "John Smith",
-        "jane@example.com": "Jane Email",
-    }
-    monkeypatch.setattr(
-        "messages.contacts.get_contact_name",
-        lambda x: contact_map.get(x)
+def mock_contacts(tmp_path, monkeypatch):
+    """Mock contact resolution with a temporary contacts database."""
+    import sqlite3
+    from messages.contacts import clear_contact_cache
+
+    # Create a temporary contacts database
+    db_path = tmp_path / "AddressBook-v22.abcddb"
+    conn = sqlite3.connect(db_path)
+
+    # Create the required tables (minimal schema)
+    conn.executescript("""
+        CREATE TABLE ZABCDRECORD (
+            Z_PK INTEGER PRIMARY KEY,
+            ZFIRSTNAME VARCHAR,
+            ZLASTNAME VARCHAR,
+            ZNICKNAME VARCHAR,
+            ZORGANIZATION VARCHAR
+        );
+
+        CREATE TABLE ZABCDPHONENUMBER (
+            Z_PK INTEGER PRIMARY KEY,
+            ZOWNER INTEGER,
+            ZFULLNUMBER VARCHAR
+        );
+
+        CREATE TABLE ZABCDEMAILADDRESS (
+            Z_PK INTEGER PRIMARY KEY,
+            ZOWNER INTEGER,
+            ZADDRESS VARCHAR
+        );
+    """)
+
+    # Insert test contacts
+    conn.execute(
+        "INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (1, 'Jane', 'Doe')"
     )
+    conn.execute(
+        "INSERT INTO ZABCDPHONENUMBER (ZOWNER, ZFULLNUMBER) VALUES (1, '+1 (555) 123-4567')"
+    )
+
+    conn.execute(
+        "INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (2, 'John', 'Smith')"
+    )
+    conn.execute(
+        "INSERT INTO ZABCDPHONENUMBER (ZOWNER, ZFULLNUMBER) VALUES (2, '+44 7700 900123')"
+    )
+
+    conn.execute(
+        "INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (3, 'Jane', 'Email')"
+    )
+    conn.execute(
+        "INSERT INTO ZABCDEMAILADDRESS (ZOWNER, ZADDRESS) VALUES (3, 'jane@example.com')"
+    )
+
+    conn.commit()
+    conn.close()
+
+    # Patch the database finder to return our test database
+    monkeypatch.setattr(
+        "messages.contacts._find_contacts_databases",
+        lambda: [db_path]
+    )
+
+    # Clear the cache so it rebuilds from our test database
+    clear_contact_cache()
+
+    yield
+
+    # Clear cache after test
+    clear_contact_cache()
