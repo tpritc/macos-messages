@@ -40,11 +40,15 @@ Or if you prefer working from the command line:
 # List your conversations
 messages chats
 
-# Get messages with someone (any phone format works!)
-messages messages --with "555-123-4567"
+# Get messages from a chat
+messages --chat 42
+messages --chat "Mom"
+
+# Get messages with a contact
+messages --with "Mom"
 
 # Search across everything
-messages search "dinner tomorrow"
+messages --search "dinner tomorrow"
 ```
 
 ## Features

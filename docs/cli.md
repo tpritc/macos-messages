@@ -2,13 +2,37 @@
 
 The `messages` command gives you access to your Messages.app data right from the terminal. This page covers all the available commands and options.
 
+## Quick reference
+
+```bash
+# Show help
+messages
+messages --help
+
+# List chats
+messages chats
+messages chats --search "john"
+
+# List contacts
+messages contacts
+messages contacts --search "john"
+
+# List messages from a chat
+messages --chat 42
+messages --chat "Mom"
+messages --with "John Doe"
+
+# Search messages
+messages --search "dinner"
+messages --with "John Doe" --search "dinner"
+messages --with "John Doe" --search "dinner" --since 2025-07-15
+```
+
+---
+
 ## Global options
 
 These options work with any command:
-
-```bash
-messages [OPTIONS] COMMAND [ARGS]
-```
 
 | Option | What it does |
 |--------|--------------|
@@ -16,6 +40,81 @@ messages [OPTIONS] COMMAND [ARGS]
 | `--no-contacts` | Don't resolve phone numbers to contact names |
 | `--version` | Show the version number |
 | `--help` | Show help |
+
+---
+
+## Listing messages
+
+When you provide message options directly to `messages`, it lists messages from a conversation. Use `--chat` or `--with` to specify the conversation, and `--search` to search within messages.
+
+```bash
+messages [OPTIONS]
+```
+
+| Option | What it does |
+|--------|--------------|
+| `-c, --chat ID\|NAME` | Chat ID or display name |
+| `-w, --with NAME` | Contact name (exact match) |
+| `-s, --search TEXT` | Search messages for text |
+| `--since DATETIME` | Only show messages after this date (YYYY-MM-DD) |
+| `--before DATETIME` | Only show messages before this date (YYYY-MM-DD) |
+| `-f, --first INTEGER` | Show first N messages (oldest) |
+| `-l, --last INTEGER` | Show last N messages (newest, default: 50) |
+| `--with-attachments` | Only show messages with attachments |
+| `--json` | Output as JSON |
+
+!!! note "--chat and --with are mutually exclusive"
+    You can use `--chat` or `--with`, but not both. If you specify both, the command will exit with an error.
+
+**Examples:**
+
+```bash
+# Get the last 50 messages from chat ID 42
+messages --chat 42
+
+# Get messages by chat display name
+messages --chat "Mom"
+
+# Get messages with a contact (exact name match)
+messages --with "John Doe"
+
+# Search all messages
+messages --search "dinner"
+
+# Search within a conversation
+messages --with "John Doe" --search "dinner"
+
+# Messages from the last week
+messages --chat 42 --since 2025-01-01
+
+# Date range
+messages --chat 42 --since 2025-01-01 --before 2025-01-15
+
+# Only show messages with attachments
+messages --chat 42 --with-attachments
+
+# Get JSON for scripting
+messages --chat 42 --json | jq '.[] | select(.is_from_me == false)'
+```
+
+**What the output looks like:**
+
+```
+[January 15, 2025]
+Mom (10:30am): Hey, are you free for lunch?
+me (10:31am): Sure! Where? [❤️ 1, 👍 1]
+Mom (10:32am): How about Main St? (edited)
+```
+
+With `--with-attachments`:
+
+```
+[January 15, 2025]
+Mom (10:33am): Check out this photo!
+  [image: ~/Library/Messages/Attachments/ab/cd/photo.jpg]
+```
+
+---
 
 ## chats
 
@@ -27,6 +126,7 @@ messages chats [OPTIONS]
 
 | Option | What it does |
 |--------|--------------|
+| `-s, --search TEXT` | Filter chats by display name |
 | `--service [imessage\|sms\|rcs]` | Only show chats from a specific service |
 | `-n, --limit INTEGER` | How many to show (default: 20) |
 | `--json` | Output as JSON instead of plain text |
@@ -34,6 +134,12 @@ messages chats [OPTIONS]
 **Examples:**
 
 ```bash
+# Show your 20 most recent conversations
+messages chats
+
+# Search for chats by name
+messages chats --search "john"
+
 # Show your 10 most recent conversations
 messages chats --limit 10
 
@@ -51,179 +157,43 @@ messages chats --json | jq '.[0]'
 15 Work Group (iMessage) - 892 messages
 ```
 
-The number at the start is the chat ID, which you'll use with other commands.
+The number at the start is the chat ID, which you can use with `--chat`.
 
 ---
 
-## messages
+## contacts
 
-Lists messages from a conversation. You need to specify which conversation using either `--chat` (with a chat ID) or `--with` (with a phone number or email).
+Lists contacts from your macOS Contacts.app.
 
 ```bash
-messages messages [OPTIONS]
+messages contacts [OPTIONS]
 ```
 
 | Option | What it does |
 |--------|--------------|
-| `-c, --chat INTEGER` | Chat ID (get this from the `chats` command) |
-| `-w, --with TEXT` | Phone number or email address |
-| `--after DATETIME` | Only show messages after this date (YYYY-MM-DD) |
-| `--before DATETIME` | Only show messages before this date (YYYY-MM-DD) |
-| `-l, --last INTEGER` | Show last N messages, newest first (default: 50) |
-| `-f, --first INTEGER` | Show first N messages, oldest first |
-| `--offset INTEGER` | Skip the first N messages |
-| `--no-unsent` | Don't include messages that were unsent |
-| `-v, --verbose` | Show more details (like who reacted to each message) |
-| `--json` | Output as JSON |
-
-**Examples:**
-
-```bash
-# Get the last 50 messages (default)
-messages messages --chat 42
-
-# Get the last 10 messages
-messages messages --chat 42 --last 10
-
-# Get the first 10 messages (oldest)
-messages messages --chat 42 --first 10
-
-# Get messages by phone number (any format works!)
-messages messages --with "+1 555 123 4567"
-messages messages --with "555-123-4567"
-messages messages --with "5551234567"
-
-# Messages from the last week
-messages messages --chat 42 --after 2024-01-08
-
-# See who reacted to each message
-messages messages --chat 42 --verbose
-
-# Export a whole conversation
-messages messages --chat 42 --first 10000 > conversation.txt
-```
-
-**What the output looks like:**
-
-```
-[2024-01-15 09:30] [id:12345] Mom: Hey, are you free for lunch?
-[2024-01-15 09:31] [id:12346] me: Sure! Where? [2 reactions: 1 love, 1 like]
-[2024-01-15 09:32] [id:12347] Mom: How about Main St? (edited)
-```
-
-With `--verbose`, you'll see who left each reaction:
-
-```
-[2024-01-15 09:31] [id:12346] me: Sure! Where?
-  reactions: Mom love, Dad like
-```
-
----
-
-## read
-
-Shows a single message with all its details. Useful when you want to see the full picture - edit history, all reactions, effects, etc.
-
-```bash
-messages read MESSAGE_ID [OPTIONS]
-```
-
-| Option | What it does |
-|--------|--------------|
-| `--json` | Output as JSON |
-
-**Examples:**
-
-```bash
-messages read 12345
-messages read 12345 --json
-```
-
-**What the output looks like:**
-
-```
-ID: 12345
-Date: 2024-01-15 09:31:00
-From: me
-Chat: 42
-Effect: balloons
-
-Sure! Where were you thinking?
-
-Reactions (2):
-  love from Mom
-  like from Dad
-```
-
----
-
-## search
-
-Searches your messages for specific text. The search is case-insensitive.
-
-```bash
-messages search QUERY [OPTIONS]
-```
-
-| Option | What it does |
-|--------|--------------|
-| `-c, --chat INTEGER` | Only search within a specific chat |
-| `--after DATETIME` | Only search messages after this date |
-| `--before DATETIME` | Only search messages before this date |
-| `-n, --limit INTEGER` | How many results to show (default: 20) |
-| `-v, --verbose` | Show more details |
-| `--json` | Output as JSON |
-
-**Examples:**
-
-```bash
-# Search all your messages
-messages search "dinner"
-
-# Search within a specific conversation
-messages search "project update" --chat 15
-
-# Search within a date range
-messages search "birthday" --after 2024-01-01 --before 2024-02-01
-```
-
----
-
-## attachments
-
-Lists file attachments (images, videos, documents, etc.) from your messages.
-
-```bash
-messages attachments [OPTIONS]
-```
-
-| Option | What it does |
-|--------|--------------|
-| `-c, --chat INTEGER` | Only show attachments from a specific chat |
-| `-m, --message INTEGER` | Only show attachments from a specific message |
-| `--type TEXT` | Filter by MIME type (e.g., `image/*`, `image/png`) |
+| `-s, --search TEXT` | Filter contacts by name |
 | `-n, --limit INTEGER` | How many to show (default: 20) |
-| `--no-download` | Don't automatically download iCloud attachments |
-| `--json` | Output as JSON |
+| `--json` | Output as JSON instead of plain text |
 
 **Examples:**
 
 ```bash
-# All attachments from a chat
-messages attachments --chat 42
+# List contacts
+messages contacts
 
-# Only images
-messages attachments --chat 42 --type "image/*"
+# Search for contacts by name
+messages contacts --search "john"
 
-# Attachments from a specific message
-messages attachments --message 12345
+# Get JSON for scripting
+messages contacts --json
 ```
 
 **What the output looks like:**
 
 ```
-1001 IMG_1234.jpg (245KB) image/jpeg
-  ~/Library/Messages/Attachments/ab/cd/IMG_1234.jpg
+John Doe
+John Smith
+Debbie Johnson
 ```
 
 ---
@@ -233,10 +203,8 @@ messages attachments --message 12345
 By default, commands output plain text that's easy to read and pipe to other tools. If you need machine-readable output, use `--json`:
 
 ```bash
-messages messages --chat 42 --json | jq '.[] | select(.is_from_me == false)'
+messages --chat 42 --json | jq '.[] | select(.is_from_me == false)'
 ```
-
-The `--verbose` flag (on commands that support it) shows extra details like who reacted to each message.
 
 ---
 
@@ -249,4 +217,6 @@ If something goes wrong, you'll get one of these errors:
 | `Messages database not found` | The chat.db file doesn't exist at the expected location |
 | `Cannot read Messages database. Grant Full Disk Access...` | Your terminal needs Full Disk Access permission |
 | `Chat 999 not found` | There's no chat with that ID |
-| `Could not parse phone number` | The phone number format wasn't recognized |
+| `Multiple chats match "Name"` | More than one chat matches the display name—use the chat ID instead |
+| `Cannot specify both --chat and --with` | These options are mutually exclusive |
+| `Contact "Name" not found` | No contact with that exact name was found |

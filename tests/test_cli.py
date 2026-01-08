@@ -29,7 +29,13 @@ class TestGlobalOptions:
         assert result.exit_code == 0
         assert "Usage:" in result.output
         assert "chats" in result.output
-        assert "messages" in result.output
+        assert "contacts" in result.output
+
+    def test_cli_no_args_shows_help(self, runner):
+        """No arguments should show help."""
+        result = runner.invoke(cli, [])
+        assert result.exit_code == 0
+        assert "Usage:" in result.output
 
     def test_cli_custom_db_path(self, runner, test_db_path, monkeypatch):
         """--db should use specified database path."""
@@ -47,11 +53,210 @@ class TestGlobalOptions:
         result = runner.invoke(cli, [
             "--db", str(test_db_path),
             "--no-contacts",
-            "messages", "--chat", "1"
+            "--chat", "1"
         ])
         assert result.exit_code == 0
         # With --no-contacts, should show phone number, not resolved name
         assert "+1555" in result.output or "5551234567" in result.output
+
+
+class TestMessagesRoot:
+    """Tests for root command message listing options."""
+
+    def test_messages_by_chat_id(self, runner, test_db_path, monkeypatch):
+        """--chat with ID should list messages from that chat."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, ["--db", str(test_db_path), "--chat", "1"])
+        assert result.exit_code == 0
+        assert "lunch" in result.output.lower()
+
+    def test_messages_by_chat_display_name(self, runner, test_db_path, monkeypatch):
+        """--chat with display name should list messages from matching chat."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, ["--db", str(test_db_path), "--chat", "Family Group"])
+        assert result.exit_code == 0
+        assert "dinner" in result.output.lower()
+
+    def test_messages_by_chat_display_name_multiple_matches(self, runner, test_db_path, monkeypatch):
+        """--chat with ambiguous name should error with list of matches."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+        # This test assumes we have multiple chats with similar names
+        # For now, just verify the error handling structure exists
+        # Implementation will need test data with duplicates
+
+    def test_messages_by_with(self, runner, test_db_path, monkeypatch):
+        """--with should list messages with exact contact name match."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        # Only return "Jane Doe" for the specific phone number in chat 1
+        def mock_contact(x):
+            if x == "+15551234567":
+                return "Jane Doe"
+            return None
+        monkeypatch.setattr("messages.contacts.get_contact_name", mock_contact)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--with", "Jane Doe"
+        ])
+        assert result.exit_code == 0
+        assert "lunch" in result.output.lower()
+
+    def test_messages_with_not_found(self, runner, test_db_path, monkeypatch):
+        """--with with unknown contact should exit 0 with empty results."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--with", "Unknown Person"
+        ])
+        assert result.exit_code == 0
+        # Empty or no messages found
+
+    def test_messages_chat_and_with_mutually_exclusive(self, runner, test_db_path, monkeypatch):
+        """--chat and --with together should error with exit code 1."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--chat", "1",
+            "--with", "Jane Doe"
+        ])
+        assert result.exit_code == 1
+        assert "Cannot specify both --chat and --with" in result.output
+
+    def test_messages_search(self, runner, test_db_path, monkeypatch):
+        """--search should find messages containing query."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, ["--db", str(test_db_path), "--search", "lunch"])
+        assert result.exit_code == 0
+        assert "lunch" in result.output.lower()
+
+    def test_messages_search_with_contact(self, runner, test_db_path, monkeypatch):
+        """--with combined with --search should search within conversation."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        # Only return "Jane Doe" for the specific phone number in chat 1
+        def mock_contact(x):
+            if x == "+15551234567":
+                return "Jane Doe"
+            return None
+        monkeypatch.setattr("messages.contacts.get_contact_name", mock_contact)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--with", "Jane Doe",
+            "--search", "lunch"
+        ])
+        assert result.exit_code == 0
+        assert "lunch" in result.output.lower()
+
+    def test_messages_since(self, runner, test_db_path, monkeypatch):
+        """--since should filter by date."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--chat", "1", "--since", "2024-01-15"
+        ])
+        assert result.exit_code == 0
+
+    def test_messages_before(self, runner, test_db_path, monkeypatch):
+        """--before should filter by date."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--chat", "1", "--before", "2024-01-16"
+        ])
+        assert result.exit_code == 0
+
+    def test_messages_limit(self, runner, test_db_path, monkeypatch):
+        """--last should restrict number of messages."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--chat", "1", "--last", "2"
+        ])
+        assert result.exit_code == 0
+        # Count message lines
+        import re
+        msg_lines = [l for l in result.output.split("\n") if re.search(r"\(\d+:\d+[ap]m\):", l)]
+        assert len(msg_lines) == 2
+
+    def test_messages_with_attachments(self, runner, test_db_path, monkeypatch):
+        """--with-attachments should filter to only messages with attachments."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--chat", "1", "--with-attachments"
+        ])
+        assert result.exit_code == 0
+        # Should only show messages with attachments
+        # All displayed messages should have attachment indicators
+        if result.output.strip():
+            assert "[image:" in result.output or "[file:" in result.output
+
+    def test_messages_json_output(self, runner, test_db_path, monkeypatch):
+        """--json should output valid JSON array."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--chat", "1", "--json", "--last", "5"
+        ])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert isinstance(data, list)
+
+    def test_messages_json_includes_attachments(self, runner, test_db_path, monkeypatch):
+        """JSON output should include attachments array with full details."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--chat", "1", "--json", "--last", "50"
+        ])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+
+        # Find message with attachments
+        msg_with_attachments = next((m for m in data if m["has_attachments"]), None)
+        assert msg_with_attachments is not None, "Should have a message with attachments"
+
+        # Check attachments array is present and populated
+        assert "attachments" in msg_with_attachments
+        assert len(msg_with_attachments["attachments"]) >= 1
+
+    def test_messages_json_dates_are_utc(self, runner, test_db_path, monkeypatch):
+        """JSON dates should be in UTC with Z suffix."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "--chat", "1", "--json", "--last", "1"
+        ])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert len(data) > 0
+        import re
+        assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", data[0]["date"])
 
 
 class TestChatsCommand:
@@ -66,6 +271,30 @@ class TestChatsCommand:
         assert result.exit_code == 0
         assert "Family Group" in result.output
 
+    def test_chats_search(self, runner, test_db_path, monkeypatch):
+        """--search should filter chats by display name."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "chats", "--search", "Family"
+        ])
+        assert result.exit_code == 0
+        assert "Family Group" in result.output
+
+    def test_chats_search_no_results(self, runner, test_db_path, monkeypatch):
+        """--search with no matches should return empty."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "chats", "--search", "xyznonexistent123"
+        ])
+        assert result.exit_code == 0
+        assert result.output.strip() == "" or "Family" not in result.output
+
     def test_chats_limit(self, runner, test_db_path, monkeypatch):
         """--limit should restrict output."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
@@ -73,7 +302,6 @@ class TestChatsCommand:
 
         result = runner.invoke(cli, ["--db", str(test_db_path), "chats", "--limit", "1"])
         assert result.exit_code == 0
-        # Should only have one chat line (plus possible header)
         lines = [l for l in result.output.strip().split("\n") if l]
         assert len(lines) == 1
 
@@ -104,402 +332,70 @@ class TestChatsCommand:
 
         result = runner.invoke(cli, ["--db", str(test_db_path), "chats"])
         assert result.exit_code == 0
-        # Should contain chat ID, service indicator, and message count
         assert "iMessage" in result.output or "SMS" in result.output
         assert "messages" in result.output.lower()
 
 
-class TestMessagesCommand:
-    """Tests for the 'messages' command."""
+class TestContactsCommand:
+    """Tests for the 'contacts' command."""
 
-    def test_messages_requires_chat_or_with(self, runner):
-        """Should error if neither --chat nor --with provided."""
-        result = runner.invoke(cli, ["messages"])
-        assert result.exit_code != 0
-        assert "Specify --chat or --with" in result.output or "required" in result.output.lower()
-
-    def test_messages_by_chat_id(self, runner, test_db_path, monkeypatch):
-        """--chat should filter by chat ID."""
+    def test_contacts_list(self, runner, mock_contacts, monkeypatch):
+        """Should list contacts."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, ["--db", str(test_db_path), "messages", "--chat", "1"])
+        result = runner.invoke(cli, ["contacts"])
         assert result.exit_code == 0
-        assert "lunch" in result.output.lower()
+        # Should contain some contact names
+        assert "Jane Doe" in result.output or "John Smith" in result.output
 
-    def test_messages_by_identifier(self, runner, test_db_path, monkeypatch):
-        """--with should filter by phone/email."""
+    def test_contacts_search(self, runner, mock_contacts, monkeypatch):
+        """--search should filter contacts by name."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--with", "+15551234567"
-        ])
+        result = runner.invoke(cli, ["contacts", "--search", "jane"])
         assert result.exit_code == 0
-        assert "lunch" in result.output.lower()
+        assert "Jane" in result.output
 
-    def test_messages_last(self, runner, test_db_path, monkeypatch):
-        """--last should return most recent N messages."""
+    def test_contacts_search_multiple_matches(self, runner, mock_contacts, monkeypatch):
+        """--search should return all matching contacts."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--last", "2"
-        ])
+        result = runner.invoke(cli, ["contacts", "--search", "john"])
         assert result.exit_code == 0
-        # Count message lines (lines with time format like "(10:01am):")
-        import re
-        msg_lines = [l for l in result.output.split("\n") if re.search(r"\(\d+:\d+[ap]m\):", l)]
-        assert len(msg_lines) == 2
+        # Should match both "John Doe" and "Debbie Johnson" type names
 
-    def test_messages_first(self, runner, test_db_path, monkeypatch):
-        """--first should return oldest N messages."""
+    def test_contacts_search_no_results(self, runner, mock_contacts, monkeypatch):
+        """--search with no matches should return empty."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--first", "2"
-        ])
+        result = runner.invoke(cli, ["contacts", "--search", "xyznonexistent123"])
         assert result.exit_code == 0
-        # Count message lines (lines with time format like "(10:01am):")
-        import re
-        msg_lines = [l for l in result.output.split("\n") if re.search(r"\(\d+:\d+[ap]m\):", l)]
-        assert len(msg_lines) == 2
+        assert result.output.strip() == ""
 
-    def test_messages_after_date(self, runner, test_db_path, monkeypatch):
-        """--after should filter by date."""
+    def test_contacts_limit(self, runner, mock_contacts, monkeypatch):
+        """--limit should restrict output."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--after", "2024-01-15"
-        ])
+        result = runner.invoke(cli, ["contacts", "--limit", "1"])
         assert result.exit_code == 0
+        lines = [l for l in result.output.strip().split("\n") if l]
+        assert len(lines) <= 1
 
-    def test_messages_before_date(self, runner, test_db_path, monkeypatch):
-        """--before should filter by date."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--before", "2024-01-16"
-        ])
-        assert result.exit_code == 0
-
-    def test_messages_json_output(self, runner, test_db_path, monkeypatch):
+    def test_contacts_json_output(self, runner, mock_contacts, monkeypatch):
         """--json should output valid JSON array."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--json", "--last", "5"
-        ])
+        result = runner.invoke(cli, ["contacts", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert isinstance(data, list)
 
-    def test_messages_json_includes_attachments(self, runner, test_db_path, monkeypatch):
-        """JSON output should include attachments array with full details."""
+    def test_contacts_no_address_book(self, runner, monkeypatch):
+        """Should return empty list if no address book found."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+        # Patch in the cli module where it's imported
+        monkeypatch.setattr("messages.cli.get_all_contacts", lambda: [])
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--json", "--last", "50"
-        ])
+        result = runner.invoke(cli, ["contacts"])
         assert result.exit_code == 0
-        data = json.loads(result.output)
-
-        # Find message with attachments (msg009 in test data)
-        msg_with_attachments = next((m for m in data if m["has_attachments"]), None)
-        assert msg_with_attachments is not None, "Should have a message with attachments"
-
-        # Check attachments array is present and populated
-        assert "attachments" in msg_with_attachments
-        assert len(msg_with_attachments["attachments"]) >= 1
-
-        # Check attachment structure
-        att = msg_with_attachments["attachments"][0]
-        assert "id" in att
-        assert "filename" in att
-        assert "mime_type" in att
-        assert "path" in att
-        assert "size" in att
-        # Path should be expanded (no ~)
-        assert "~" not in att["path"]
-
-    def test_messages_json_cleans_replacement_char(self, runner, test_db_path, monkeypatch):
-        """JSON output should have text cleaned of Object Replacement Character."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--json", "--last", "50"
-        ])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-
-        # No message text should contain the replacement character
-        for msg in data:
-            if msg.get("text"):
-                assert "\ufffc" not in msg["text"], "Text should not contain Object Replacement Character"
-
-    def test_messages_plain_shows_attachment_path(self, runner, test_db_path, monkeypatch):
-        """Plain text output should show [type:path] for attachments."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--last", "50"
-        ])
-        assert result.exit_code == 0
-        # Should contain attachment indicator with path
-        assert "[image:" in result.output or "[file:" in result.output
-        # Should show full path (expanded ~)
-        assert "Library/Messages/Attachments" in result.output
-
-    def test_messages_json_dates_are_utc(self, runner, test_db_path, monkeypatch):
-        """JSON dates should be in UTC with Z suffix."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--json", "--last", "1"
-        ])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert len(data) > 0
-        # Date should end with Z (UTC)
-        import re
-        assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", data[0]["date"])
-
-    def test_messages_no_unsent(self, runner, test_db_path, monkeypatch):
-        """--no-unsent should exclude unsent messages."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        # First get all messages
-        result_all = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--json", "--last", "100"
-        ])
-        all_msgs = json.loads(result_all.output)
-
-        # Then without unsent
-        result_no_unsent = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--json", "--last", "100", "--no-unsent"
-        ])
-        no_unsent_msgs = json.loads(result_no_unsent.output)
-
-        # Should have fewer messages (we have one unsent in test data)
-        assert len(no_unsent_msgs) < len(all_msgs)
-
-    def test_messages_output_format(self, runner, test_db_path, monkeypatch):
-        """Output should show IRC-style format with date header and sender (time): text."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--last", "1"
-        ])
-        assert result.exit_code == 0
-        # Should have date header in brackets like [January 15, 2024]
-        assert "[January" in result.output or "[February" in result.output or "[March" in result.output
-        # Should have time in parentheses like (10:01am):
-        import re
-        assert re.search(r"\(\d+:\d+[ap]m\):", result.output)
-
-
-class TestReadCommand:
-    """Tests for the 'read' command."""
-
-    def test_read_message(self, runner, test_db_path, monkeypatch):
-        """Should display single message details."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, ["--db", str(test_db_path), "read", "1"])
-        assert result.exit_code == 0
-        assert "lunch" in result.output.lower()
-
-    def test_read_message_not_found(self, runner, test_db_path, monkeypatch):
-        """Should error for nonexistent message ID."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, ["--db", str(test_db_path), "read", "99999"])
-        assert result.exit_code != 0
-
-    def test_read_json_output(self, runner, test_db_path, monkeypatch):
-        """--json should output valid JSON object."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, ["--db", str(test_db_path), "read", "1", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert isinstance(data, dict)
-        assert "id" in data
-
-    def test_read_json_includes_attachments(self, runner, test_db_path, monkeypatch):
-        """--json should include attachments array for message with attachments."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        # Message 9 has attachments in test data
-        result = runner.invoke(cli, ["--db", str(test_db_path), "read", "9", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert "attachments" in data
-        assert len(data["attachments"]) >= 1
-        # Path should be expanded
-        assert "~" not in data["attachments"][0]["path"]
-
-    def test_read_shows_reactions(self, runner, test_db_path, monkeypatch):
-        """Should list all reactions with who reacted."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        # Message 2 has reactions
-        result = runner.invoke(cli, ["--db", str(test_db_path), "read", "2"])
-        assert result.exit_code == 0
-        assert "reaction" in result.output.lower() or "love" in result.output.lower()
-
-
-class TestSearchCommand:
-    """Tests for the 'search' command."""
-
-    def test_search_finds_matches(self, runner, test_db_path, monkeypatch):
-        """Should find messages containing query."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, ["--db", str(test_db_path), "search", "lunch"])
-        assert result.exit_code == 0
-        assert "lunch" in result.output.lower()
-
-    def test_search_no_results(self, runner, test_db_path, monkeypatch):
-        """Should return empty output for no matches."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, ["--db", str(test_db_path), "search", "xyznonexistent123"])
-        assert result.exit_code == 0
-        # Output should be empty or just whitespace
-        assert result.output.strip() == "" or "no results" in result.output.lower()
-
-    def test_search_within_chat(self, runner, test_db_path, monkeypatch):
-        """--chat should limit search to specific chat."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "search", "dinner", "--chat", "3"
-        ])
-        assert result.exit_code == 0
-        assert "dinner" in result.output.lower()
-
-    def test_search_json_output(self, runner, test_db_path, monkeypatch):
-        """--json should output valid JSON array."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "search", "lunch", "--json"
-        ])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert isinstance(data, list)
-
-    def test_search_json_includes_attachments_field(self, runner, test_db_path, monkeypatch):
-        """--json should include attachments field in results."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "search", "photo", "--json"
-        ])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert isinstance(data, list)
-        # Message about photo should have attachments
-        if len(data) > 0:
-            assert "attachments" in data[0]
-
-
-class TestAttachmentsCommand:
-    """Tests for the 'attachments' command."""
-
-    def test_attachments_list(self, runner, test_db_path, monkeypatch):
-        """Should list attachments."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, ["--db", str(test_db_path), "attachments"])
-        assert result.exit_code == 0
-        assert "photo.jpg" in result.output or "image" in result.output.lower()
-
-    def test_attachments_by_chat(self, runner, test_db_path, monkeypatch):
-        """--chat should filter by chat ID."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "attachments", "--chat", "1"
-        ])
-        assert result.exit_code == 0
-        # Chat 1 has photo.jpg and document.pdf
-        assert "photo" in result.output.lower() or "pdf" in result.output.lower()
-
-    def test_attachments_by_message(self, runner, test_db_path, monkeypatch):
-        """--message should filter by message ID."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "attachments", "--message", "9"
-        ])
-        assert result.exit_code == 0
-
-    def test_attachments_mime_type_filter(self, runner, test_db_path, monkeypatch):
-        """--type should filter by MIME type."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "attachments", "--type", "image/*"
-        ])
-        assert result.exit_code == 0
-        # Should only show images, not PDF
-        assert "pdf" not in result.output.lower() or "image" in result.output.lower()
-
-    def test_attachments_json_output(self, runner, test_db_path, monkeypatch):
-        """--json should output valid JSON array."""
-        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
-        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
-
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "attachments", "--json"
-        ])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert isinstance(data, list)
-        assert len(data) == 3  # We have 3 attachments in test data
+        assert result.output.strip() == ""

@@ -272,3 +272,58 @@ def clear_contact_cache() -> None:
     """
     global _contact_lookup
     _contact_lookup = None
+
+
+def _get_all_contacts_from_lookup() -> list[Contact]:
+    """Get unique contacts from the lookup dictionary.
+
+    Returns:
+        List of unique Contact objects with display names.
+    """
+    lookup = _get_contact_lookup()
+    if not lookup:
+        return []
+
+    # Use a set to deduplicate contacts (same contact may be stored under multiple keys)
+    seen_names: set[str] = set()
+    contacts: list[Contact] = []
+
+    for contact in lookup.values():
+        name = contact.display_name
+        if name and name not in seen_names:
+            seen_names.add(name)
+            contacts.append(contact)
+
+    # Sort by display name for consistent output
+    contacts.sort(key=lambda c: c.display_name or "")
+    return contacts
+
+
+def get_all_contacts() -> list[Contact]:
+    """Get all contacts from the macOS Contacts database.
+
+    Returns:
+        List of Contact objects with display names.
+    """
+    return _get_all_contacts_from_lookup()
+
+
+def search_contacts(query: str) -> list[Contact]:
+    """Search contacts by name.
+
+    Args:
+        query: Search string to match against contact names (case-insensitive).
+
+    Returns:
+        List of Contact objects whose display_name contains the query.
+    """
+    if not query:
+        return []
+
+    all_contacts = get_all_contacts()
+    query_lower = query.lower()
+
+    return [
+        c for c in all_contacts
+        if c.display_name and query_lower in c.display_name.lower()
+    ]

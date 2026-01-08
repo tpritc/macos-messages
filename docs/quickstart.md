@@ -22,45 +22,56 @@ That number at the beginning is the chat ID. You'll use this to fetch messages f
 
 ## Reading messages
 
-Now let's read some messages. You can either use the chat ID you just found:
+Now let's read some messages. You can use the chat ID you just found:
 
 ```bash
-messages messages --chat 42
+messages --chat 42
 ```
 
-Or you can search by phone number directly. The nice thing is that any format works - you don't need to remember exactly how the number is stored:
+Or you can use the chat's display name:
 
 ```bash
-messages messages --with "555-123-4567"
-messages messages --with "+1 555 123 4567"
-messages messages --with "5551234567"
+messages --chat "Mom"
+```
+
+Or you can use a contact name (exact match):
+
+```bash
+messages --with "Mom"
 ```
 
 You'll get output like this:
 
 ```
-[2024-01-15 09:30] [id:12345] Mom: Hey, are you coming for dinner Sunday?
-[2024-01-15 09:31] [id:12346] me: Yes! What time?
-[2024-01-15 09:32] [id:12347] Mom: 6pm works. Bringing anyone?
+[January 15, 2025]
+
+Mom (9:30am): Hey, are you coming for dinner Sunday?
+You (9:31am): Yes! What time?
+Mom (9:32am): 6pm works. Bringing anyone?
 ```
 
 ## Searching messages
 
-Maybe you're looking for something specific. The `search` command lets you find messages containing certain text:
+Maybe you're looking for something specific. Use `--search` to find messages containing certain text:
 
 ```bash
-messages search "dinner"
+messages --search "dinner"
 ```
 
 ```
-[2024-01-15 09:30] [id:12345] Mom: Hey, are you coming for dinner Sunday?
-[2024-01-12 18:45] [id:12298] Mom: Dinner was great, thanks for coming!
+[January 15, 2025]
+
+Mom (9:30am): Hey, are you coming for dinner Sunday?
+
+[January 12, 2025]
+
+Mom (6:45pm): Dinner was great, thanks for coming!
 ```
 
 You can limit the search to a specific conversation if you want:
 
 ```bash
-messages search "project update" --chat 15
+messages --with "Mom" --search "dinner"
 ```
 
 ## Exporting conversations
@@ -68,13 +79,13 @@ messages search "project update" --chat 15
 Need to save a conversation? Just redirect the output to a file:
 
 ```bash
-messages messages --chat 42 --limit 10000 > mom-messages.txt
+messages --chat 42 --limit 10000 > mom-messages.txt
 ```
 
 Or get JSON if you want to process it programmatically:
 
 ```bash
-messages messages --chat 42 --json > mom-messages.json
+messages --chat 42 --json > mom-messages.json
 ```
 
 ## Using the Python library

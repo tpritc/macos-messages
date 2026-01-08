@@ -136,11 +136,11 @@ class TestCLIErrors:
         assert result.exit_code != 0
         assert "phone" in result.output.lower() or "parse" in result.output.lower() or "error" in result.output.lower()
 
-    def test_cli_messages_missing_required_option(self, runner):
-        """CLI should show error when --chat or --with is missing."""
-        result = runner.invoke(cli, ["messages"])
-        assert result.exit_code != 0
-        assert "--chat" in result.output or "--with" in result.output or "specify" in result.output.lower()
+    def test_cli_no_options_shows_help(self, runner):
+        """CLI should show help when no options provided."""
+        result = runner.invoke(cli, [])
+        assert result.exit_code == 0
+        assert "Usage:" in result.output
 
     def test_cli_invalid_service_filter(self, runner, test_db_path, monkeypatch):
         """CLI should reject invalid service filter values."""

@@ -11,6 +11,7 @@ import click
 
 import messages
 from messages.models import Message
+from messages.contacts import get_all_contacts, search_contacts
 
 
 def json_serializer(obj: Any) -> Any:
@@ -179,7 +180,7 @@ def format_date_header(dt: datetime) -> str:
     return f"[{local_dt.strftime('%B %-d, %Y')}]"
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=messages.__version__)
 @click.option(
     "--db",
@@ -191,78 +192,188 @@ def format_date_header(dt: datetime) -> str:
     is_flag=True,
     help="Don't resolve phone numbers to contact names",
 )
+@click.option("--chat", "-c", "chat_id", help="Chat ID or display name")
+@click.option("--with", "-w", "with_contact", help="Contact name (exact match)")
+@click.option("--search", "-s", "search_query", help="Search messages for text")
+@click.option("--since", type=click.DateTime(), help="After date (YYYY-MM-DD)")
+@click.option("--before", type=click.DateTime(), help="Before date (YYYY-MM-DD)")
+@click.option("--first", "-f", "first_n", type=int, help="Show first N messages (oldest)")
+@click.option("--last", "-l", "last_n", type=int, default=50, help="Show last N messages (newest, default: 50)")
+@click.option("--with-attachments", is_flag=True, help="Only show messages with attachments")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 @click.pass_context
-def cli(ctx: click.Context, db: str | None, no_contacts: bool) -> None:
+def cli(
+    ctx: click.Context,
+    db: str | None,
+    no_contacts: bool,
+    chat_id: str | None,
+    with_contact: str | None,
+    search_query: str | None,
+    since: datetime | None,
+    before: datetime | None,
+    first_n: int | None,
+    last_n: int,
+    with_attachments: bool,
+    as_json: bool,
+) -> None:
     """Read messages from macOS Messages.app.
 
     Requires Full Disk Access permission for Terminal.
+    
+    \b
+    Examples:
+      messages --chat 42              List messages from chat ID 42
+      messages --chat "Mom"           List messages from chat named "Mom"
+      messages --with "John Doe"      List messages with contact John Doe
+      messages --search "dinner"      Search all messages for "dinner"
     """
     ctx.ensure_object(dict)
+    
+    # Check for mutually exclusive options
+    if chat_id and with_contact:
+        click.echo("Error: Cannot specify both --chat and --with", err=True)
+        sys.exit(1)
+    
+    # If a subcommand is being invoked, just set up the DB
+    if ctx.invoked_subcommand is not None:
+        try:
+            ctx.obj["db"] = messages.get_db(db)
+            ctx.obj["db"].resolve_contacts = not no_contacts
+        except PermissionError as e:
+            click.echo(str(e), err=True)
+            sys.exit(1)
+        except FileNotFoundError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+        return
+    
+    # If no message options provided, show help
+    if not chat_id and not with_contact and not search_query:
+        click.echo(ctx.get_help())
+        return
+    
+    # Initialize DB for message listing
     try:
-        ctx.obj["db"] = messages.get_db(db)
-        ctx.obj["db"].resolve_contacts = not no_contacts
+        db_instance = messages.get_db(db)
+        db_instance.resolve_contacts = not no_contacts
+        ctx.obj["db"] = db_instance
     except PermissionError as e:
         click.echo(str(e), err=True)
         sys.exit(1)
     except FileNotFoundError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+    
+    # Handle message listing
+    _list_messages(
+        ctx,
+        chat_id=chat_id,
+        with_contact=with_contact,
+        search_query=search_query,
+        since=since,
+        before=before,
+        first_n=first_n,
+        last_n=last_n,
+        with_attachments=with_attachments,
+        as_json=as_json,
+    )
 
 
-@cli.command()
-@click.option("--service", type=click.Choice(["imessage", "sms", "rcs"], case_sensitive=False))
-@click.option("--limit", "-n", type=int, default=20)
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-@click.pass_context
-def chats(ctx: click.Context, service: str | None, limit: int, as_json: bool) -> None:
-    """List conversations."""
-    db = ctx.obj["db"]
+def _resolve_chat_id(db: "messages.MessagesDB", chat_id_or_name: str) -> int:
+    """Resolve a chat ID or display name to a numeric chat ID.
+    
+    Args:
+        db: The database instance
+        chat_id_or_name: Either a numeric ID or a display name
+        
+    Returns:
+        The numeric chat ID
+        
+    Raises:
+        click.ClickException: If chat not found or multiple matches
+    """
+    # Try to parse as integer first
+    try:
+        return int(chat_id_or_name)
+    except ValueError:
+        pass
+    
+    # Search for chat by display name
+    all_chats = list(db.chats(limit=1000))
+    matches = [
+        c for c in all_chats
+        if c.display_name and chat_id_or_name.lower() in c.display_name.lower()
+    ]
+    
+    if not matches:
+        raise click.ClickException(f"Chat '{chat_id_or_name}' not found")
+    
+    # Check for exact match first
+    exact_matches = [c for c in matches if c.display_name and c.display_name.lower() == chat_id_or_name.lower()]
+    if len(exact_matches) == 1:
+        return exact_matches[0].id
+    
+    if len(matches) > 1:
+        match_list = "\n".join(f"  {c.id}: {c.display_name}" for c in matches[:10])
+        raise click.ClickException(
+            f"Multiple chats match '{chat_id_or_name}':\n{match_list}\n\nUse the chat ID instead."
+        )
+    
+    return matches[0].id
 
-    # Convert service to the format used in the database
-    service_map = {"imessage": "iMessage", "sms": "SMS", "rcs": "RCS"}
-    db_service = service_map.get(service.lower()) if service else None
 
-    results = list(db.chats(service=db_service, limit=limit))
+def _resolve_contact_chat_id(db: "messages.MessagesDB", contact_name: str) -> int | None:
+    """Resolve a contact name to a chat ID.
+    
+    Args:
+        db: The database instance
+        contact_name: The exact contact name to find
+        
+    Returns:
+        The chat ID for the conversation with that contact, or None if not found
+    """
+    # Find chats where the display name matches the contact name
+    all_chats = list(db.chats(limit=1000))
+    for chat in all_chats:
+        if chat.display_name and chat.display_name.lower() == contact_name.lower():
+            return chat.id
+    return None
 
-    if as_json:
-        click.echo(json.dumps([asdict(c) for c in results], default=json_serializer, indent=2))
-    else:
-        for chat in results:
-            name = chat.display_name or chat.identifier
-            click.echo(f"{chat.id} {name} ({chat.service}) - {chat.message_count} messages")
 
-
-@cli.command("messages")
-@click.option("--chat", "-c", "chat_id", type=int, help="Chat ID")
-@click.option("--with", "-w", "identifier", help="Phone number or email")
-@click.option("--after", type=click.DateTime(), help="After date (YYYY-MM-DD)")
-@click.option("--before", type=click.DateTime(), help="Before date (YYYY-MM-DD)")
-@click.option("--first", "-f", "first_n", type=int, help="Show first N messages (oldest)")
-@click.option("--last", "-l", "last_n", type=int, default=50, help="Show last N messages (newest, default: 50)")
-@click.option("--offset", type=int, default=0)
-@click.option("--no-unsent", is_flag=True, help="Exclude unsent messages")
-@click.option("--verbose", "-v", is_flag=True, help="Show detailed reaction info")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-@click.pass_context
-def list_messages(
+def _list_messages(
     ctx: click.Context,
-    chat_id: int | None,
-    identifier: str | None,
-    after: datetime | None,
+    chat_id: str | None,
+    with_contact: str | None,
+    search_query: str | None,
+    since: datetime | None,
     before: datetime | None,
     first_n: int | None,
     last_n: int,
-    offset: int,
-    no_unsent: bool,
-    verbose: bool,
+    with_attachments: bool,
     as_json: bool,
 ) -> None:
-    """List messages from a conversation."""
+    """List or search messages based on provided options."""
     db = ctx.obj["db"]
-
-    if not chat_id and not identifier:
-        raise click.UsageError("Specify --chat or --with")
-
+    
+    resolved_chat_id = None
+    
+    # Resolve chat ID from --chat option
+    if chat_id:
+        try:
+            resolved_chat_id = _resolve_chat_id(db, chat_id)
+        except click.ClickException as e:
+            click.echo(f"Error: {e.message}", err=True)
+            sys.exit(1)
+    
+    # Resolve chat ID from --with option
+    if with_contact:
+        resolved_chat_id = _resolve_contact_chat_id(db, with_contact)
+        if resolved_chat_id is None:
+            # No conversation found with this contact - return empty
+            if as_json:
+                click.echo("[]")
+            return
+    
     # Determine limit and direction
     # If --first is specified, use it (oldest first)
     # Otherwise use --last (newest first, the default)
@@ -272,30 +383,41 @@ def list_messages(
     else:
         limit = last_n
         reverse = True
-
-    try:
+    
+    # Fetch more if filtering by attachments, since we filter after
+    fetch_limit = limit * 10 if with_attachments else limit
+    
+    if search_query:
+        results = list(
+            db.search(
+                search_query,
+                chat_id=resolved_chat_id,
+                after=since,
+                before=before,
+                limit=fetch_limit,
+            )
+        )
+    else:
+        if resolved_chat_id is None:
+            click.echo("Error: Specify --chat or --with to list messages", err=True)
+            sys.exit(1)
         results = list(
             db.messages(
-                chat_id=chat_id,
-                identifier=identifier,
-                after=after,
+                chat_id=resolved_chat_id,
+                after=since,
                 before=before,
-                limit=limit,
-                offset=offset,
-                include_unsent=not no_unsent,
+                limit=fetch_limit,
                 reverse=reverse,
             )
         )
         # When showing last N (reverse), re-reverse so messages appear in chronological order
         if reverse:
             results = list(reversed(results))
-    except LookupError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-    except ValueError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
+    
+    # Filter to only messages with attachments if requested
+    if with_attachments:
+        results = [m for m in results if m.has_attachments][:limit]
+    
     if as_json:
         click.echo(json.dumps([message_to_dict(m, db) for m in results], default=json_serializer, indent=2))
     else:
@@ -304,137 +426,61 @@ def list_messages(
             msg_date = msg.date.date()
             if msg_date != current_date:
                 if current_date is not None:
-                    click.echo()  # Blank line before new date header
+                    click.echo()
                 click.echo(format_date_header(msg.date))
-                click.echo()  # Blank line after date header
+                click.echo()
                 current_date = msg_date
-            # Fetch attachments if message has them
-            msg_attachments = None
-            if msg.has_attachments:
-                msg_attachments = list(db.attachments(message_id=msg.id))
-            click.echo(format_message(msg, verbose=verbose, attachments=msg_attachments))
+            msg_attachments = list(db.attachments(message_id=msg.id)) if msg.has_attachments else None
+            click.echo(format_message(msg, verbose=False, attachments=msg_attachments))
 
 
 @cli.command()
-@click.argument("message_id", type=int)
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-@click.pass_context
-def read(ctx: click.Context, message_id: int, as_json: bool) -> None:
-    """Read a single message with full details."""
-    db = ctx.obj["db"]
-
-    try:
-        msg = db.message(message_id)
-    except LookupError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    if as_json:
-        click.echo(json.dumps(message_to_dict(msg, db), default=json_serializer, indent=2))
-    else:
-        sender = "me" if msg.is_from_me else (
-            msg.sender.display_name or msg.sender.identifier if msg.sender else "?"
-        )
-        click.echo(f"ID: {msg.id}")
-        click.echo(f"Date: {msg.date}")
-        click.echo(f"From: {sender}")
-        click.echo(f"Chat: {msg.chat_id}")
-        if msg.effect:
-            click.echo(f"Effect: {msg.effect.value}")
-        if msg.is_edited:
-            click.echo(f"Edited: {len(msg.edit_history)} times")
-            for edit in msg.edit_history:
-                click.echo(f"  [{edit.date}] {edit.text}")
-        if msg.is_unsent:
-            click.echo("Status: unsent")
-        click.echo()
-        click.echo(msg.text or "(no text)")
-        if msg.transcription:
-            click.echo(f"\nTranscription: {msg.transcription}")
-        if msg.reactions:
-            click.echo(f"\nReactions ({len(msg.reactions)}):")
-            for r in msg.reactions:
-                name = r.sender.display_name or r.sender.identifier
-                click.echo(f"  {r.type.value} from {name}")
-
-
-@cli.command()
-@click.argument("query")
-@click.option("--chat", "-c", "chat_id", type=int, help="Limit to chat ID")
-@click.option("--after", type=click.DateTime(), help="After date")
-@click.option("--before", type=click.DateTime(), help="Before date")
+@click.option("--search", "-s", "search_query", help="Filter chats by display name")
+@click.option("--service", type=click.Choice(["imessage", "sms", "rcs"], case_sensitive=False))
 @click.option("--limit", "-n", type=int, default=20)
-@click.option("--verbose", "-v", is_flag=True, help="Show detailed reaction info")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 @click.pass_context
-def search(
-    ctx: click.Context,
-    query: str,
-    chat_id: int | None,
-    after: datetime | None,
-    before: datetime | None,
-    limit: int,
-    verbose: bool,
-    as_json: bool,
-) -> None:
-    """Search messages by text content."""
+def chats(ctx: click.Context, search_query: str | None, service: str | None, limit: int, as_json: bool) -> None:
+    """List conversations."""
     db = ctx.obj["db"]
 
-    results = list(
-        db.search(
-            query,
-            chat_id=chat_id,
-            after=after,
-            before=before,
-            limit=limit,
-        )
-    )
+    # Convert service to the format used in the database
+    service_map = {"imessage": "iMessage", "sms": "SMS", "rcs": "RCS"}
+    db_service = service_map.get(service.lower()) if service else None
+
+    results = list(db.chats(service=db_service, limit=limit if not search_query else 1000))
+    
+    # Filter by display name if search provided
+    if search_query:
+        query_lower = search_query.lower()
+        results = [
+            c for c in results
+            if c.display_name and query_lower in c.display_name.lower()
+        ][:limit]
 
     if as_json:
-        click.echo(json.dumps([message_to_dict(m, db) for m in results], default=json_serializer, indent=2))
+        click.echo(json.dumps([asdict(c) for c in results], default=json_serializer, indent=2))
     else:
-        for msg in results:
-            # Fetch attachments if message has them
-            msg_attachments = None
-            if msg.has_attachments:
-                msg_attachments = list(db.attachments(message_id=msg.id))
-            click.echo(format_message(msg, verbose=verbose, attachments=msg_attachments))
+        for chat in results:
+            name = chat.display_name or chat.identifier
+            click.echo(f"{chat.id} {name} ({chat.service}) - {chat.message_count} messages")
 
 
 @cli.command()
-@click.option("--chat", "-c", "chat_id", type=int, help="Filter by chat")
-@click.option("--message", "-m", "message_id", type=int, help="Filter by message")
-@click.option("--type", "mime_type", help="Filter by MIME type (e.g., image/*)")
+@click.option("--search", "-s", "search_query", help="Filter contacts by name")
 @click.option("--limit", "-n", type=int, default=20)
-@click.option("--no-download", is_flag=True, help="Don't auto-download iCloud attachments")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 @click.pass_context
-def attachments(
-    ctx: click.Context,
-    chat_id: int | None,
-    message_id: int | None,
-    mime_type: str | None,
-    limit: int,
-    no_download: bool,
-    as_json: bool,
-) -> None:
-    """List attachments."""
-    db = ctx.obj["db"]
-
-    results = list(
-        db.attachments(
-            chat_id=chat_id,
-            message_id=message_id,
-            mime_type=mime_type,
-            limit=limit,
-            auto_download=not no_download,
-        )
-    )
+def contacts(ctx: click.Context, search_query: str | None, limit: int, as_json: bool) -> None:
+    """List contacts from macOS Contacts.app."""
+    if search_query:
+        results = search_contacts(search_query)[:limit]
+    else:
+        results = get_all_contacts()[:limit]
 
     if as_json:
-        click.echo(json.dumps([asdict(a) for a in results], default=json_serializer, indent=2))
+        click.echo(json.dumps([asdict(c) for c in results], default=json_serializer, indent=2))
     else:
-        for att in results:
-            size_kb = att.size // 1024 if att.size else 0
-            click.echo(f"{att.id} {att.filename} ({size_kb}KB) {att.mime_type or ''}")
-            click.echo(f"  {att.path}")
+        for contact in results:
+            if contact.display_name:
+                click.echo(contact.display_name)
