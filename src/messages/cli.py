@@ -3,7 +3,7 @@
 import json
 import sys
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import click
@@ -13,9 +13,19 @@ from messages.models import Message
 
 
 def json_serializer(obj: Any) -> Any:
-    """JSON serializer for objects not serializable by default."""
+    """JSON serializer for objects not serializable by default.
+    
+    Datetimes are output as UTC with Z suffix (ISO 8601).
+    Naive datetimes from the database are already in UTC.
+    """
     if isinstance(obj, datetime):
-        return obj.isoformat()
+        # Naive datetimes from the Messages database are in UTC
+        if obj.tzinfo is None:
+            utc_dt = obj.replace(tzinfo=timezone.utc)
+        else:
+            utc_dt = obj.astimezone(timezone.utc)
+        # Format as ISO 8601 with Z suffix
+        return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     if hasattr(obj, "value"):  # Enum
         return obj.value
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
@@ -44,8 +54,12 @@ def format_reactions_verbose(msg: Message) -> str:
 
 
 def format_message(msg: Message, verbose: bool = False) -> str:
-    """Format a message for plain text output."""
-    sender = "me" if msg.is_from_me else (
+    """Format a message for plain text output in IRC-style format.
+    
+    Times are displayed in the user's local timezone.
+    Naive datetimes from the database are treated as UTC.
+    """
+    sender = "You" if msg.is_from_me else (
         msg.sender.display_name or msg.sender.identifier if msg.sender else "?"
     )
     text = msg.text or "(no text)"
@@ -54,7 +68,17 @@ def format_message(msg: Message, verbose: bool = False) -> str:
 
     reactions = format_reactions_verbose(msg) if verbose else format_reactions_compact(msg)
 
-    line = f"[{msg.date:%Y-%m-%d %H:%M}] [id:{msg.id}] {sender}: {text}"
+    # Convert UTC to local time for display
+    # Naive datetimes from the Messages database are in UTC
+    if msg.date.tzinfo is None:
+        utc_dt = msg.date.replace(tzinfo=timezone.utc)
+    else:
+        utc_dt = msg.date
+    local_dt = utc_dt.astimezone()  # Convert to local timezone
+    # Format time as 12-hour with am/pm (e.g., "1:12pm")
+    time_str = local_dt.strftime("%-I:%M%p").lower()
+    
+    line = f"{sender} ({time_str}): {text}"
     if not verbose:
         line += reactions
 
@@ -69,6 +93,20 @@ def format_message(msg: Message, verbose: bool = False) -> str:
         line += f" [effect:{msg.effect.value}]"
 
     return line
+
+
+def format_date_header(dt: datetime) -> str:
+    """Format a date header like [July 3, 2025].
+    
+    Uses local timezone for display.
+    Naive datetimes from the database are treated as UTC.
+    """
+    if dt.tzinfo is None:
+        utc_dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        utc_dt = dt
+    local_dt = utc_dt.astimezone()  # Convert to local timezone
+    return f"[{local_dt.strftime('%B %-d, %Y')}]"
 
 
 @click.group()
@@ -191,7 +229,15 @@ def list_messages(
     if as_json:
         click.echo(json.dumps([asdict(m) for m in results], default=json_serializer, indent=2))
     else:
+        current_date = None
         for msg in results:
+            msg_date = msg.date.date()
+            if msg_date != current_date:
+                if current_date is not None:
+                    click.echo()  # Blank line before new date header
+                click.echo(format_date_header(msg.date))
+                click.echo()  # Blank line after date header
+                current_date = msg_date
             click.echo(format_message(msg, verbose=verbose))
 
 

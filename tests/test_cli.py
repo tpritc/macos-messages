@@ -149,8 +149,9 @@ class TestMessagesCommand:
             "messages", "--chat", "1", "--last", "2"
         ])
         assert result.exit_code == 0
-        # Count message lines (lines with [id:])
-        msg_lines = [l for l in result.output.split("\n") if "[id:" in l]
+        # Count message lines (lines with time format like "(10:01am):")
+        import re
+        msg_lines = [l for l in result.output.split("\n") if re.search(r"\(\d+:\d+[ap]m\):", l)]
         assert len(msg_lines) == 2
 
     def test_messages_first(self, runner, test_db_path, monkeypatch):
@@ -163,8 +164,9 @@ class TestMessagesCommand:
             "messages", "--chat", "1", "--first", "2"
         ])
         assert result.exit_code == 0
-        # Count message lines (lines with [id:])
-        msg_lines = [l for l in result.output.split("\n") if "[id:" in l]
+        # Count message lines (lines with time format like "(10:01am):")
+        import re
+        msg_lines = [l for l in result.output.split("\n") if re.search(r"\(\d+:\d+[ap]m\):", l)]
         assert len(msg_lines) == 2
 
     def test_messages_after_date(self, runner, test_db_path, monkeypatch):
@@ -202,6 +204,22 @@ class TestMessagesCommand:
         data = json.loads(result.output)
         assert isinstance(data, list)
 
+    def test_messages_json_dates_are_utc(self, runner, test_db_path, monkeypatch):
+        """JSON dates should be in UTC with Z suffix."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "messages", "--chat", "1", "--json", "--last", "1"
+        ])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert len(data) > 0
+        # Date should end with Z (UTC)
+        import re
+        assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", data[0]["date"])
+
     def test_messages_no_unsent(self, runner, test_db_path, monkeypatch):
         """--no-unsent should exclude unsent messages."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
@@ -225,7 +243,7 @@ class TestMessagesCommand:
         assert len(no_unsent_msgs) < len(all_msgs)
 
     def test_messages_output_format(self, runner, test_db_path, monkeypatch):
-        """Output should show [date] [id:N] sender: text."""
+        """Output should show IRC-style format with date header and sender (time): text."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
@@ -234,10 +252,11 @@ class TestMessagesCommand:
             "messages", "--chat", "1", "--last", "1"
         ])
         assert result.exit_code == 0
-        # Should have date in brackets
-        assert "[2024-" in result.output or "[2023-" in result.output
-        # Should have message ID
-        assert "[id:" in result.output
+        # Should have date header in brackets like [January 15, 2024]
+        assert "[January" in result.output or "[February" in result.output or "[March" in result.output
+        # Should have time in parentheses like (10:01am):
+        import re
+        assert re.search(r"\(\d+:\d+[ap]m\):", result.output)
 
 
 class TestReadCommand:
