@@ -473,6 +473,7 @@ class MessagesDB:
         self,
         *,
         chat_id: Optional[int] = None,
+        chat_ids: Optional[list[int]] = None,
         identifier: Optional[str] = None,
         after: Optional[datetime] = None,
         before: Optional[datetime] = None,
@@ -484,7 +485,8 @@ class MessagesDB:
         """List messages from a conversation.
 
         Args:
-            chat_id: Filter by chat ID
+            chat_id: Filter by chat ID (single chat)
+            chat_ids: Filter by multiple chat IDs (merges messages from all chats)
             identifier: Filter by phone/email (alternative to chat_id)
             after: Only messages after this date
             before: Only messages before this date
@@ -497,30 +499,40 @@ class MessagesDB:
             Message objects with reactions aggregated
         """
         # If identifier provided, find the chat first
-        if identifier and not chat_id:
+        if identifier and not chat_id and not chat_ids:
             chat = self.chat_by_identifier(identifier)
             chat_id = chat.id
 
-        if not chat_id:
-            raise ValueError("Either chat_id or identifier must be provided")
+        # Normalize to a list of chat IDs
+        if chat_ids:
+            target_chat_ids = chat_ids
+        elif chat_id:
+            target_chat_ids = [chat_id]
+        else:
+            raise ValueError("Either chat_id, chat_ids, or identifier must be provided")
 
-        cursor = self.conn.execute("SELECT 1 FROM chat WHERE ROWID = ?", (chat_id,))
-        if cursor.fetchone() is None:
-            raise LookupError(f"Chat {chat_id} not found")
+        # Validate all chat IDs exist
+        for cid in target_chat_ids:
+            cursor = self.conn.execute("SELECT 1 FROM chat WHERE ROWID = ?", (cid,))
+            if cursor.fetchone() is None:
+                raise LookupError(f"Chat {cid} not found")
 
         if limit == 0:
             return
 
-        query = """
+        # Build query with IN clause for multiple chat IDs
+        placeholders = ",".join("?" * len(target_chat_ids))
+        query = f"""
             SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.date, m.is_from_me, m.handle_id,
                    m.cache_has_attachments, m.expressive_send_style_id,
-                   m.date_edited, m.date_retracted, m.thread_originator_guid
+                   m.date_edited, m.date_retracted, m.thread_originator_guid,
+                   cmj.chat_id
             FROM message m
             JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-            WHERE cmj.chat_id = ?
+            WHERE cmj.chat_id IN ({placeholders})
               AND (m.associated_message_type IS NULL OR m.associated_message_type = 0)
         """
-        params: list = [chat_id]
+        params: list = list(target_chat_ids)
 
         if not include_unsent:
             query += " AND (m.date_retracted IS NULL OR m.date_retracted = 0)"
@@ -549,7 +561,7 @@ class MessagesDB:
         cursor = self.conn.execute(query, params)
 
         for row in cursor:
-            yield self._row_to_message(row, chat_id)
+            yield self._row_to_message(row, row["chat_id"])
 
     def message(self, message_id: int) -> Message:
         """Get a single message by ID with full details.
@@ -586,6 +598,7 @@ class MessagesDB:
         query: str,
         *,
         chat_id: Optional[int] = None,
+        chat_ids: Optional[list[int]] = None,
         after: Optional[datetime] = None,
         before: Optional[datetime] = None,
         limit: int = 50,
@@ -595,6 +608,7 @@ class MessagesDB:
         Args:
             query: Search string (case-insensitive substring match)
             chat_id: Limit search to specific chat
+            chat_ids: Limit search to multiple chats (merges results)
             after: Only messages after this date
             before: Only messages before this date
             limit: Maximum results (default 50)
@@ -614,7 +628,12 @@ class MessagesDB:
         """
         params: list = [f"%{query}%"]
 
-        if chat_id:
+        # Handle single chat_id or multiple chat_ids
+        if chat_ids:
+            placeholders = ",".join("?" * len(chat_ids))
+            sql += f" AND cmj.chat_id IN ({placeholders})"
+            params.extend(chat_ids)
+        elif chat_id:
             sql += " AND cmj.chat_id = ?"
             params.append(chat_id)
 

@@ -322,22 +322,26 @@ def _resolve_chat_id(db: "messages.MessagesDB", chat_id_or_name: str) -> int:
     return matches[0].id
 
 
-def _resolve_contact_chat_id(db: "messages.MessagesDB", contact_name: str) -> int | None:
-    """Resolve a contact name to a chat ID.
+def _resolve_contact_chat_ids(db: "messages.MessagesDB", contact_name: str) -> list[int]:
+    """Resolve a contact name to all matching chat IDs.
+    
+    A contact may have multiple conversations (e.g., different phone numbers,
+    iMessage vs SMS). This returns all chat IDs for that contact.
     
     Args:
         db: The database instance
         contact_name: The exact contact name to find
         
     Returns:
-        The chat ID for the conversation with that contact, or None if not found
+        List of chat IDs for conversations with that contact (may be empty)
     """
-    # Find chats where the display name matches the contact name
+    # Find all chats where the display name matches the contact name
     all_chats = list(db.chats(limit=1000))
+    matching_ids = []
     for chat in all_chats:
         if chat.display_name and chat.display_name.lower() == contact_name.lower():
-            return chat.id
-    return None
+            matching_ids.append(chat.id)
+    return matching_ids
 
 
 def _list_messages(
@@ -356,6 +360,7 @@ def _list_messages(
     db = ctx.obj["db"]
     
     resolved_chat_id = None
+    resolved_chat_ids = None
     
     # Resolve chat ID from --chat option
     if chat_id:
@@ -365,10 +370,10 @@ def _list_messages(
             click.echo(f"Error: {e.message}", err=True)
             sys.exit(1)
     
-    # Resolve chat ID from --with option
+    # Resolve chat IDs from --with option (may return multiple chats for same contact)
     if with_contact:
-        resolved_chat_id = _resolve_contact_chat_id(db, with_contact)
-        if resolved_chat_id is None:
+        resolved_chat_ids = _resolve_contact_chat_ids(db, with_contact)
+        if not resolved_chat_ids:
             # No conversation found with this contact - return empty
             if as_json:
                 click.echo("[]")
@@ -392,18 +397,20 @@ def _list_messages(
             db.search(
                 search_query,
                 chat_id=resolved_chat_id,
+                chat_ids=resolved_chat_ids,
                 after=since,
                 before=before,
                 limit=fetch_limit,
             )
         )
     else:
-        if resolved_chat_id is None:
+        if resolved_chat_id is None and resolved_chat_ids is None:
             click.echo("Error: Specify --chat or --with to list messages", err=True)
             sys.exit(1)
         results = list(
             db.messages(
                 chat_id=resolved_chat_id,
+                chat_ids=resolved_chat_ids,
                 after=since,
                 before=before,
                 limit=fetch_limit,
