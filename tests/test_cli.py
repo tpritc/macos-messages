@@ -204,6 +204,68 @@ class TestMessagesCommand:
         data = json.loads(result.output)
         assert isinstance(data, list)
 
+    def test_messages_json_includes_attachments(self, runner, test_db_path, monkeypatch):
+        """JSON output should include attachments array with full details."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "messages", "--chat", "1", "--json", "--last", "50"
+        ])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+
+        # Find message with attachments (msg009 in test data)
+        msg_with_attachments = next((m for m in data if m["has_attachments"]), None)
+        assert msg_with_attachments is not None, "Should have a message with attachments"
+
+        # Check attachments array is present and populated
+        assert "attachments" in msg_with_attachments
+        assert len(msg_with_attachments["attachments"]) >= 1
+
+        # Check attachment structure
+        att = msg_with_attachments["attachments"][0]
+        assert "id" in att
+        assert "filename" in att
+        assert "mime_type" in att
+        assert "path" in att
+        assert "size" in att
+        # Path should be expanded (no ~)
+        assert "~" not in att["path"]
+
+    def test_messages_json_cleans_replacement_char(self, runner, test_db_path, monkeypatch):
+        """JSON output should have text cleaned of Object Replacement Character."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "messages", "--chat", "1", "--json", "--last", "50"
+        ])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+
+        # No message text should contain the replacement character
+        for msg in data:
+            if msg.get("text"):
+                assert "\ufffc" not in msg["text"], "Text should not contain Object Replacement Character"
+
+    def test_messages_plain_shows_attachment_path(self, runner, test_db_path, monkeypatch):
+        """Plain text output should show [type:path] for attachments."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "messages", "--chat", "1", "--last", "50"
+        ])
+        assert result.exit_code == 0
+        # Should contain attachment indicator with path
+        assert "[image:" in result.output or "[file:" in result.output
+        # Should show full path (expanded ~)
+        assert "Library/Messages/Attachments" in result.output
+
     def test_messages_json_dates_are_utc(self, runner, test_db_path, monkeypatch):
         """JSON dates should be in UTC with Z suffix."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
@@ -290,6 +352,20 @@ class TestReadCommand:
         assert isinstance(data, dict)
         assert "id" in data
 
+    def test_read_json_includes_attachments(self, runner, test_db_path, monkeypatch):
+        """--json should include attachments array for message with attachments."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        # Message 9 has attachments in test data
+        result = runner.invoke(cli, ["--db", str(test_db_path), "read", "9", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "attachments" in data
+        assert len(data["attachments"]) >= 1
+        # Path should be expanded
+        assert "~" not in data["attachments"][0]["path"]
+
     def test_read_shows_reactions(self, runner, test_db_path, monkeypatch):
         """Should list all reactions with who reacted."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
@@ -347,6 +423,22 @@ class TestSearchCommand:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert isinstance(data, list)
+
+    def test_search_json_includes_attachments_field(self, runner, test_db_path, monkeypatch):
+        """--json should include attachments field in results."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "search", "photo", "--json"
+        ])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert isinstance(data, list)
+        # Message about photo should have attachments
+        if len(data) > 0:
+            assert "attachments" in data[0]
 
 
 class TestAttachmentsCommand:

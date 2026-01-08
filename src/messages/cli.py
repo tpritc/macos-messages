@@ -4,6 +4,7 @@ import json
 import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import click
@@ -31,6 +32,31 @@ def json_serializer(obj: Any) -> Any:
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
+def message_to_dict(msg: Message, db: "messages.MessagesDB") -> dict:
+    """Convert a Message to a dict, including attachments if present."""
+    result = asdict(msg)
+    # Clean up text by removing Object Replacement Character
+    if result.get("text"):
+        result["text"] = result["text"].replace("\ufffc", "").strip() or None
+    # Add attachments if present
+    if msg.has_attachments:
+        atts = list(db.attachments(message_id=msg.id))
+        result["attachments"] = [
+            {
+                "id": att.id,
+                "filename": att.filename,
+                "mime_type": att.mime_type,
+                "path": att.path.replace("~", str(Path.home())) if att.path else None,
+                "size": att.size,
+                "is_sticker": att.is_sticker,
+            }
+            for att in atts
+        ]
+    else:
+        result["attachments"] = []
+    return result
+
+
 def format_reactions_compact(msg: Message) -> str:
     """Format reactions as '[N reactions: X type, Y type]'."""
     if not msg.reactions:
@@ -53,16 +79,60 @@ def format_reactions_verbose(msg: Message) -> str:
     return f"\n  reactions: {', '.join(parts)}"
 
 
-def format_message(msg: Message, verbose: bool = False) -> str:
+def format_message(msg: Message, verbose: bool = False, attachments: list | None = None) -> str:
     """Format a message for plain text output in IRC-style format.
     
     Times are displayed in the user's local timezone.
     Naive datetimes from the database are treated as UTC.
+    
+    Args:
+        msg: The message to format
+        verbose: If True, show detailed reaction info
+        attachments: Optional list of Attachment objects for this message
     """
     sender = "You" if msg.is_from_me else (
         msg.sender.display_name or msg.sender.identifier if msg.sender else "?"
     )
-    text = msg.text or "(no text)"
+    
+    # Build text with attachment indicators
+    text = msg.text or ""
+    
+    # Remove Object Replacement Character (used as placeholder for attachments)
+    text = text.replace("\ufffc", "").strip()
+    
+    # Add attachment indicator if message has attachments
+    if msg.has_attachments and attachments:
+        attachment_parts = []
+        for att in attachments:
+            # Determine attachment type from mime_type
+            if att.mime_type:
+                if att.mime_type.startswith("image/"):
+                    att_type = "image"
+                elif att.mime_type.startswith("video/"):
+                    att_type = "video"
+                elif att.mime_type.startswith("audio/"):
+                    att_type = "audio"
+                else:
+                    att_type = "file"
+            else:
+                att_type = "file"
+            # Use the path, expanding ~ to full path
+            att_path = att.path.replace("~", str(Path.home())) if att.path else att.filename or "unknown"
+            attachment_parts.append(f"[{att_type}:{att_path}]")
+        attachment_str = " ".join(attachment_parts)
+        if text:
+            text = f"{attachment_str} {text}"
+        else:
+            text = attachment_str
+    elif msg.has_attachments:
+        # Fallback if we don't have attachment details
+        if text:
+            text = f"[attachment] {text}"
+        else:
+            text = "[attachment]"
+    elif not text:
+        text = "(no text)"
+    
     if msg.transcription:
         text = f"[audio] {msg.transcription}"
 
@@ -227,7 +297,7 @@ def list_messages(
         sys.exit(1)
 
     if as_json:
-        click.echo(json.dumps([asdict(m) for m in results], default=json_serializer, indent=2))
+        click.echo(json.dumps([message_to_dict(m, db) for m in results], default=json_serializer, indent=2))
     else:
         current_date = None
         for msg in results:
@@ -238,7 +308,11 @@ def list_messages(
                 click.echo(format_date_header(msg.date))
                 click.echo()  # Blank line after date header
                 current_date = msg_date
-            click.echo(format_message(msg, verbose=verbose))
+            # Fetch attachments if message has them
+            msg_attachments = None
+            if msg.has_attachments:
+                msg_attachments = list(db.attachments(message_id=msg.id))
+            click.echo(format_message(msg, verbose=verbose, attachments=msg_attachments))
 
 
 @cli.command()
@@ -256,7 +330,7 @@ def read(ctx: click.Context, message_id: int, as_json: bool) -> None:
         sys.exit(1)
 
     if as_json:
-        click.echo(json.dumps(asdict(msg), default=json_serializer, indent=2))
+        click.echo(json.dumps(message_to_dict(msg, db), default=json_serializer, indent=2))
     else:
         sender = "me" if msg.is_from_me else (
             msg.sender.display_name or msg.sender.identifier if msg.sender else "?"
@@ -317,10 +391,14 @@ def search(
     )
 
     if as_json:
-        click.echo(json.dumps([asdict(m) for m in results], default=json_serializer, indent=2))
+        click.echo(json.dumps([message_to_dict(m, db) for m in results], default=json_serializer, indent=2))
     else:
         for msg in results:
-            click.echo(format_message(msg, verbose=verbose))
+            # Fetch attachments if message has them
+            msg_attachments = None
+            if msg.has_attachments:
+                msg_attachments = list(db.attachments(message_id=msg.id))
+            click.echo(format_message(msg, verbose=verbose, attachments=msg_attachments))
 
 
 @cli.command()
