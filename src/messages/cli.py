@@ -129,7 +129,8 @@ def chats(ctx: click.Context, service: str | None, limit: int, as_json: bool) ->
 @click.option("--with", "-w", "identifier", help="Phone number or email")
 @click.option("--after", type=click.DateTime(), help="After date (YYYY-MM-DD)")
 @click.option("--before", type=click.DateTime(), help="Before date (YYYY-MM-DD)")
-@click.option("--limit", "-n", type=int, default=50)
+@click.option("--first", "-f", "first_n", type=int, help="Show first N messages (oldest)")
+@click.option("--last", "-l", "last_n", type=int, default=50, help="Show last N messages (newest, default: 50)")
 @click.option("--offset", type=int, default=0)
 @click.option("--no-unsent", is_flag=True, help="Exclude unsent messages")
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed reaction info")
@@ -141,7 +142,8 @@ def list_messages(
     identifier: str | None,
     after: datetime | None,
     before: datetime | None,
-    limit: int,
+    first_n: int | None,
+    last_n: int,
     offset: int,
     no_unsent: bool,
     verbose: bool,
@@ -153,6 +155,16 @@ def list_messages(
     if not chat_id and not identifier:
         raise click.UsageError("Specify --chat or --with")
 
+    # Determine limit and direction
+    # If --first is specified, use it (oldest first)
+    # Otherwise use --last (newest first, the default)
+    if first_n is not None:
+        limit = first_n
+        reverse = False
+    else:
+        limit = last_n
+        reverse = True
+
     try:
         results = list(
             db.messages(
@@ -163,8 +175,12 @@ def list_messages(
                 limit=limit,
                 offset=offset,
                 include_unsent=not no_unsent,
+                reverse=reverse,
             )
         )
+        # When showing last N (reverse), re-reverse so messages appear in chronological order
+        if reverse:
+            results = list(reversed(results))
     except LookupError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

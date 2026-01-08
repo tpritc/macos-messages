@@ -139,14 +139,28 @@ class TestMessagesCommand:
         assert result.exit_code == 0
         assert "lunch" in result.output.lower()
 
-    def test_messages_limit(self, runner, test_db_path, monkeypatch):
-        """--limit should restrict output."""
+    def test_messages_last(self, runner, test_db_path, monkeypatch):
+        """--last should return most recent N messages."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
         result = runner.invoke(cli, [
             "--db", str(test_db_path),
-            "messages", "--chat", "1", "--limit", "2"
+            "messages", "--chat", "1", "--last", "2"
+        ])
+        assert result.exit_code == 0
+        # Count message lines (lines with [id:])
+        msg_lines = [l for l in result.output.split("\n") if "[id:" in l]
+        assert len(msg_lines) == 2
+
+    def test_messages_first(self, runner, test_db_path, monkeypatch):
+        """--first should return oldest N messages."""
+        monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+        monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
+
+        result = runner.invoke(cli, [
+            "--db", str(test_db_path),
+            "messages", "--chat", "1", "--first", "2"
         ])
         assert result.exit_code == 0
         # Count message lines (lines with [id:])
@@ -182,7 +196,7 @@ class TestMessagesCommand:
 
         result = runner.invoke(cli, [
             "--db", str(test_db_path),
-            "messages", "--chat", "1", "--json", "--limit", "5"
+            "messages", "--chat", "1", "--json", "--last", "5"
         ])
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -196,14 +210,14 @@ class TestMessagesCommand:
         # First get all messages
         result_all = runner.invoke(cli, [
             "--db", str(test_db_path),
-            "messages", "--chat", "1", "--json", "--limit", "100"
+            "messages", "--chat", "1", "--json", "--last", "100"
         ])
         all_msgs = json.loads(result_all.output)
 
         # Then without unsent
         result_no_unsent = runner.invoke(cli, [
             "--db", str(test_db_path),
-            "messages", "--chat", "1", "--json", "--limit", "100", "--no-unsent"
+            "messages", "--chat", "1", "--json", "--last", "100", "--no-unsent"
         ])
         no_unsent_msgs = json.loads(result_no_unsent.output)
 
@@ -217,7 +231,7 @@ class TestMessagesCommand:
 
         result = runner.invoke(cli, [
             "--db", str(test_db_path),
-            "messages", "--chat", "1", "--limit", "1"
+            "messages", "--chat", "1", "--last", "1"
         ])
         assert result.exit_code == 0
         # Should have date in brackets

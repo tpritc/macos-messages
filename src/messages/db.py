@@ -402,8 +402,9 @@ class MessagesDB:
         limit: int = 100,
         offset: int = 0,
         include_unsent: bool = True,
+        reverse: bool = False,
     ) -> Iterator[Message]:
-        """List messages in chronological order (oldest first).
+        """List messages from a conversation.
 
         Args:
             chat_id: Filter by chat ID
@@ -413,6 +414,7 @@ class MessagesDB:
             limit: Maximum results (default 100)
             offset: Skip first N results
             include_unsent: Include messages that were unsent (default True)
+            reverse: If True, return newest messages first (default False)
 
         Yields:
             Message objects with reactions aggregated
@@ -454,7 +456,10 @@ class MessagesDB:
             query += " AND m.date < ?"
             params.append(datetime_to_apple_time(before))
 
-        query += " ORDER BY m.date ASC"
+        if reverse:
+            query += " ORDER BY m.date DESC"
+        else:
+            query += " ORDER BY m.date ASC"
 
         if limit:
             query += " LIMIT ?"

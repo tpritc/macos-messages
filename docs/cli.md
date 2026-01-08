@@ -69,7 +69,8 @@ messages messages [OPTIONS]
 | `-w, --with TEXT` | Phone number or email address |
 | `--after DATETIME` | Only show messages after this date (YYYY-MM-DD) |
 | `--before DATETIME` | Only show messages before this date (YYYY-MM-DD) |
-| `-n, --limit INTEGER` | How many to show (default: 50) |
+| `-l, --last INTEGER` | Show last N messages, newest first (default: 50) |
+| `-f, --first INTEGER` | Show first N messages, oldest first |
 | `--offset INTEGER` | Skip the first N messages |
 | `--no-unsent` | Don't include messages that were unsent |
 | `-v, --verbose` | Show more details (like who reacted to each message) |
@@ -78,8 +79,14 @@ messages messages [OPTIONS]
 **Examples:**
 
 ```bash
-# Get messages by chat ID
+# Get the last 50 messages (default)
 messages messages --chat 42
+
+# Get the last 10 messages
+messages messages --chat 42 --last 10
+
+# Get the first 10 messages (oldest)
+messages messages --chat 42 --first 10
 
 # Get messages by phone number (any format works!)
 messages messages --with "+1 555 123 4567"
@@ -93,7 +100,7 @@ messages messages --chat 42 --after 2024-01-08
 messages messages --chat 42 --verbose
 
 # Export a whole conversation
-messages messages --chat 42 --limit 10000 > conversation.txt
+messages messages --chat 42 --first 10000 > conversation.txt
 ```
 
 **What the output looks like:**
