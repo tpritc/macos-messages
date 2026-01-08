@@ -52,6 +52,7 @@ def test_db_path(tmp_path):
             ROWID INTEGER PRIMARY KEY,
             guid TEXT UNIQUE NOT NULL,
             text TEXT,
+            attributedBody BLOB,
             date INTEGER,
             date_read INTEGER,
             date_delivered INTEGER,
@@ -62,9 +63,8 @@ def test_db_path(tmp_path):
             associated_message_type INTEGER DEFAULT 0,
             expressive_send_style_id TEXT,
             message_summary_info BLOB,
-            was_edited INTEGER DEFAULT 0,
             date_edited INTEGER,
-            is_unsent INTEGER DEFAULT 0,
+            date_retracted INTEGER,
             thread_originator_guid TEXT,
             thread_originator_part TEXT
         );
@@ -131,58 +131,83 @@ def test_db_path(tmp_path):
     )
 
     # Insert messages
+    # Format: (ROWID, guid, text, attributedBody, date, is_from_me, handle_id, cache_has_attachments,
+    #          associated_message_guid, associated_message_type, expressive_send_style_id,
+    #          date_edited, date_retracted, thread_originator_guid)
+
+    # Mock attributedBody blob containing "Hello from blob"
+    # This mimics the NSKeyedArchiver format used by macOS Messages:
+    # - Header with "streamtyped" and "NSAttributedString" markers
+    # - NSString section with + marker (0x2B), length byte, then UTF-8 text
+    # - Terminator (0x86) and trailing metadata
+    attributed_body_blob = (
+        # Header: streamtyped + class info
+        b"\x04\x0bstreamtyped\x81\xe8\x03\x84\x01\x40\x84\x84\x84\x12NSAttributedString"
+        b"\x00\x84\x84\x08NSObject\x00\x85\x92\x84\x84\x84\x08NSString\x01\x94\x84\x01"
+        # + marker (0x2B) + length (0x0F = 15) + "Hello from blob"
+        b"\x2b\x0fHello from blob"
+        # Terminator and trailing structure
+        b"\x86\x84\x02iI\x01\x10\x92\x84\x84\x84\x0cNSDictionary\x00\x94\x84\x01i\x01"
+        b"\x92\x84\x96\x96\x1d__kIMMes sagePartAttributeName\x86\x92\x84\x84\x84\x08"
+        b"NSNumber\x00\x84\x84\x07NSValue\x00\x94\x84\x01*\x84\x99\x99\x00\x86\x86\x86"
+    )
+
     messages = [
         # Chat 1: Regular conversation
-        (1, "msg001", "Hey, are you free for lunch?", to_apple_time(BASE_DATE), 0, 1, 0, None, 0, None, 0, None, 0, None),
-        (2, "msg002", "Sure! Where were you thinking?", to_apple_time(BASE_DATE + timedelta(minutes=1)), 1, None, 0, None, 0, None, 0, None, 0, None),
-        (3, "msg003", "How about that new place on Main St?", to_apple_time(BASE_DATE + timedelta(minutes=2)), 0, 1, 0, None, 0, None, 0, None, 0, None),
+        (1, "msg001", "Hey, are you free for lunch?", None, to_apple_time(BASE_DATE), 0, 1, 0, None, 0, None, None, None, None),
+        (2, "msg002", "Sure! Where were you thinking?", None, to_apple_time(BASE_DATE + timedelta(minutes=1)), 1, None, 0, None, 0, None, None, None, None),
+        (3, "msg003", "How about that new place on Main St?", None, to_apple_time(BASE_DATE + timedelta(minutes=2)), 0, 1, 0, None, 0, None, None, None, None),
 
         # Chat 1: Message with reaction (love reaction on msg002)
         # associated_message_type: 2000 = love, 2001 = like, 2002 = dislike, 2003 = laugh, 2004 = emphasis, 2005 = question
-        (4, "msg004", "\ufffc", to_apple_time(BASE_DATE + timedelta(minutes=3)), 0, 1, 0, "msg002", 2000, None, 0, None, 0, None),
+        (4, "msg004", "\ufffc", None, to_apple_time(BASE_DATE + timedelta(minutes=3)), 0, 1, 0, "msg002", 2000, None, None, None, None),
 
         # Chat 1: Another reaction (like on msg002)
-        (5, "msg005", "\ufffc", to_apple_time(BASE_DATE + timedelta(minutes=3, seconds=30)), 0, 1, 0, "msg002", 2001, None, 0, None, 0, None),
+        (5, "msg005", "\ufffc", None, to_apple_time(BASE_DATE + timedelta(minutes=3, seconds=30)), 0, 1, 0, "msg002", 2001, None, None, None, None),
 
         # Chat 1: Message with effect (balloons)
-        (6, "msg006", "Happy birthday!", to_apple_time(BASE_DATE + timedelta(minutes=5)), 1, None, 0, None, 0, "com.apple.messages.effect.CKHappyBirthdayEffect", 0, None, 0, None),
+        (6, "msg006", "Happy birthday!", None, to_apple_time(BASE_DATE + timedelta(minutes=5)), 1, None, 0, None, 0, "com.apple.messages.effect.CKHappyBirthdayEffect", None, None, None),
 
-        # Chat 1: Edited message
-        (7, "msg007", "Let's meet at 12:30", to_apple_time(BASE_DATE + timedelta(minutes=10)), 1, None, 0, None, 0, None, 1, to_apple_time(BASE_DATE + timedelta(minutes=11)), 0, None),
+        # Chat 1: Edited message (date_edited is set to indicate it was edited)
+        (7, "msg007", "Let's meet at 12:30", None, to_apple_time(BASE_DATE + timedelta(minutes=10)), 1, None, 0, None, 0, None, to_apple_time(BASE_DATE + timedelta(minutes=11)), None, None),
 
-        # Chat 1: Unsent message
-        (8, "msg008", None, to_apple_time(BASE_DATE + timedelta(minutes=15)), 1, None, 0, None, 0, None, 0, None, 1, None),
+        # Chat 1: Retracted/unsent message (date_retracted is set)
+        (8, "msg008", None, None, to_apple_time(BASE_DATE + timedelta(minutes=15)), 1, None, 0, None, 0, None, None, to_apple_time(BASE_DATE + timedelta(minutes=16)), None),
 
         # Chat 1: Message with attachment
-        (9, "msg009", "Check out this photo!", to_apple_time(BASE_DATE + timedelta(minutes=20)), 0, 1, 1, None, 0, None, 0, None, 0, None),
+        (9, "msg009", "Check out this photo!", None, to_apple_time(BASE_DATE + timedelta(minutes=20)), 0, 1, 1, None, 0, None, None, None, None),
 
         # Chat 1: Threaded reply (reply to msg003)
-        (10, "msg010", "Yes! I've heard great things about it", to_apple_time(BASE_DATE + timedelta(minutes=25)), 1, None, 0, None, 0, None, 0, None, 0, "msg003"),
+        (10, "msg010", "Yes! I've heard great things about it", None, to_apple_time(BASE_DATE + timedelta(minutes=25)), 1, None, 0, None, 0, None, None, None, "msg003"),
 
         # Chat 2: SMS conversation (for service filtering tests)
-        (11, "msg011", "Got your text!", to_apple_time(BASE_DATE + timedelta(hours=1)), 0, 2, 0, None, 0, None, 0, None, 0, None),
-        (12, "msg012", "Great, talk soon", to_apple_time(BASE_DATE + timedelta(hours=1, minutes=5)), 1, None, 0, None, 0, None, 0, None, 0, None),
+        (11, "msg011", "Got your text!", None, to_apple_time(BASE_DATE + timedelta(hours=1)), 0, 2, 0, None, 0, None, None, None, None),
+        (12, "msg012", "Great, talk soon", None, to_apple_time(BASE_DATE + timedelta(hours=1, minutes=5)), 1, None, 0, None, 0, None, None, None, None),
 
         # Chat 3: Group chat messages
-        (13, "msg013", "Family dinner this Sunday?", to_apple_time(BASE_DATE + timedelta(hours=2)), 0, 1, 0, None, 0, None, 0, None, 0, None),
-        (14, "msg014", "I'm in!", to_apple_time(BASE_DATE + timedelta(hours=2, minutes=10)), 0, 3, 0, None, 0, None, 0, None, 0, None),
+        (13, "msg013", "Family dinner this Sunday?", None, to_apple_time(BASE_DATE + timedelta(hours=2)), 0, 1, 0, None, 0, None, None, None, None),
+        (14, "msg014", "I'm in!", None, to_apple_time(BASE_DATE + timedelta(hours=2, minutes=10)), 0, 3, 0, None, 0, None, None, None, None),
 
         # Chat 1: Message from a week ago (for date filtering)
-        (15, "msg015", "Old message from last week", to_apple_time(BASE_DATE - timedelta(days=7)), 0, 1, 0, None, 0, None, 0, None, 0, None),
+        (15, "msg015", "Old message from last week", None, to_apple_time(BASE_DATE - timedelta(days=7)), 0, 1, 0, None, 0, None, None, None, None),
+
+        # Chat 1: Message with text ONLY in attributedBody (text column is NULL)
+        # This tests the attributedBody extraction fallback
+        (16, "msg016", None, attributed_body_blob, to_apple_time(BASE_DATE + timedelta(minutes=30)), 1, None, 0, None, 0, None, None, None, None),
     ]
 
     conn.executemany(
         """INSERT INTO message (
-            ROWID, guid, text, date, is_from_me, handle_id, cache_has_attachments,
+            ROWID, guid, text, attributedBody, date, is_from_me, handle_id, cache_has_attachments,
             associated_message_guid, associated_message_type, expressive_send_style_id,
-            was_edited, date_edited, is_unsent, thread_originator_guid
+            date_edited, date_retracted, thread_originator_guid
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         messages
     )
 
     # Link messages to chats
     chat_message_joins = [
-        (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10), (1, 15),
+        (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10), (1, 15), (1, 16),
         (2, 11), (2, 12),
         (3, 13), (3, 14),
     ]

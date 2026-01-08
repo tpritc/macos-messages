@@ -239,6 +239,20 @@ class TestMessage:
         msg = messages_db.message(9)
         assert msg.has_attachments is True
 
+    def test_message_text_from_attributed_body(self, messages_db):
+        """Message with NULL text should extract text from attributedBody."""
+        # Message 16 has text=NULL but attributedBody contains "Hello from blob"
+        msg = messages_db.message(16)
+        assert msg.text == "Hello from blob"
+
+    def test_messages_list_includes_attributed_body_text(self, messages_db):
+        """messages() should also extract text from attributedBody."""
+        msgs = list(messages_db.messages(chat_id=1, limit=100))
+        # Find message 16 in the list
+        msg16 = next((m for m in msgs if m.id == 16), None)
+        assert msg16 is not None
+        assert msg16.text == "Hello from blob"
+
 
 class TestSearch:
     """Tests for MessagesDB.search() method."""

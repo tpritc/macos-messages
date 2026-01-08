@@ -1,6 +1,8 @@
 """Database connection and queries for Messages.app data."""
 
 import fnmatch
+import plistlib
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +25,68 @@ from .models import (
 from .phone import get_system_region, phone_match
 
 DEFAULT_DB_PATH = Path.home() / "Library" / "Messages" / "chat.db"
+
+
+def _extract_text_from_attributed_body(blob: bytes | None) -> str | None:
+    """Extract plain text from NSAttributedString blob.
+
+    The attributedBody column contains an NSKeyedArchiver-encoded
+    NSAttributedString. The plain text is stored as a UTF-8 string
+    after a type marker and length byte.
+    """
+    if not blob:
+        return None
+
+    try:
+        # Look for the NSString marker followed by the text
+        # Format: NSString <type> <marker> <marker> <type> <length> <text>
+        # The text appears after NSString...+<length_byte>
+        text_section = blob.split(b"NSString")[1].split(b"NSDictionary")[0]
+
+        # Find the + marker (0x2B) followed by length byte and text
+        # Pattern: 0x2B <length> <text bytes> 0x86
+        plus_idx = text_section.find(b"+")
+        if plus_idx != -1:
+            # Length byte is right after +
+            length = text_section[plus_idx + 1]
+            if length > 0 and plus_idx + 2 + length <= len(text_section):
+                text_bytes = text_section[plus_idx + 2 : plus_idx + 2 + length]
+                return text_bytes.decode("utf-8", errors="ignore").strip() or None
+
+        # Alternative: look for I marker (0x49) for longer texts
+        # Pattern: I <4-byte length> <text>
+        i_idx = text_section.find(b"I")
+        if i_idx != -1 and i_idx + 5 < len(text_section):
+            # 4-byte big-endian length after I
+            length = int.from_bytes(text_section[i_idx + 1 : i_idx + 5], "big")
+            if 0 < length < 10000 and i_idx + 5 + length <= len(text_section):
+                text_bytes = text_section[i_idx + 5 : i_idx + 5 + length]
+                return text_bytes.decode("utf-8", errors="ignore").strip() or None
+
+    except (IndexError, UnicodeDecodeError, ValueError):
+        pass
+
+    # Fallback: try to find any readable text in the blob
+    try:
+        if b"streamtyped" in blob:
+            parts = blob.split(b"NSString")
+            if len(parts) > 1:
+                text_part = parts[1]
+                # Find printable ASCII/UTF-8 sequences (at least 4 chars)
+                matches = re.findall(rb"[\x20-\x7e\xc0-\xff]{4,}", text_part)
+                if matches:
+                    for m in matches:
+                        try:
+                            decoded = m.decode("utf-8", errors="ignore").strip()
+                            # Skip metadata-looking strings
+                            if decoded and not decoded.startswith(("NS", "{")):
+                                return decoded
+                        except UnicodeDecodeError:
+                            continue
+    except Exception:
+        pass
+
+    return None
 
 
 class MessagesDB:
@@ -151,18 +215,23 @@ class MessagesDB:
             if reply_row:
                 reply_to_id = reply_row["ROWID"]
 
+        # Get text, falling back to attributedBody if text is empty
+        text = row["text"]
+        if not text and "attributedBody" in row.keys():
+            text = _extract_text_from_attributed_body(row["attributedBody"])
+
         return Message(
             id=row["ROWID"],
             chat_id=chat_id,
-            text=row["text"],
+            text=text,
             date=apple_time_to_datetime(row["date"]),
             is_from_me=bool(row["is_from_me"]),
             sender=sender,
             has_attachments=bool(row["cache_has_attachments"]),
             reactions=reactions,
             effect=effect,
-            is_edited=bool(row["was_edited"]),
-            is_unsent=bool(row["is_unsent"]) if "is_unsent" in row.keys() else False,
+            is_edited=bool(row["date_edited"]),
+            is_unsent=bool(row["date_retracted"]),
             reply_to_id=reply_to_id,
         )
 
@@ -364,10 +433,9 @@ class MessagesDB:
             return
 
         query = """
-            SELECT m.ROWID, m.guid, m.text, m.date, m.is_from_me, m.handle_id,
+            SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.date, m.is_from_me, m.handle_id,
                    m.cache_has_attachments, m.expressive_send_style_id,
-                   m.was_edited, m.date_edited, m.thread_originator_guid,
-                   COALESCE(m.is_unsent, 0) as is_unsent
+                   m.date_edited, m.date_retracted, m.thread_originator_guid
             FROM message m
             JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
             WHERE cmj.chat_id = ?
@@ -376,7 +444,7 @@ class MessagesDB:
         params: list = [chat_id]
 
         if not include_unsent:
-            query += " AND COALESCE(m.is_unsent, 0) = 0"
+            query += " AND (m.date_retracted IS NULL OR m.date_retracted = 0)"
 
         if after:
             query += " AND m.date > ?"
@@ -415,10 +483,9 @@ class MessagesDB:
         """
         cursor = self.conn.execute(
             """
-            SELECT m.ROWID, m.guid, m.text, m.date, m.is_from_me, m.handle_id,
+            SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.date, m.is_from_me, m.handle_id,
                    m.cache_has_attachments, m.expressive_send_style_id,
-                   m.was_edited, m.date_edited, m.thread_originator_guid,
-                   COALESCE(m.is_unsent, 0) as is_unsent,
+                   m.date_edited, m.date_retracted, m.thread_originator_guid,
                    cmj.chat_id
             FROM message m
             LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
@@ -454,10 +521,9 @@ class MessagesDB:
             Message objects with matching text
         """
         sql = """
-            SELECT m.ROWID, m.guid, m.text, m.date, m.is_from_me, m.handle_id,
+            SELECT m.ROWID, m.guid, m.text, m.attributedBody, m.date, m.is_from_me, m.handle_id,
                    m.cache_has_attachments, m.expressive_send_style_id,
-                   m.was_edited, m.date_edited, m.thread_originator_guid,
-                   COALESCE(m.is_unsent, 0) as is_unsent,
+                   m.date_edited, m.date_retracted, m.thread_originator_guid,
                    cmj.chat_id
             FROM message m
             LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
