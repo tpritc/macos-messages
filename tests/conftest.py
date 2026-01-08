@@ -152,6 +152,30 @@ def test_db_path(tmp_path):
         b"NSNumber\x00\x84\x84\x07NSValue\x00\x94\x84\x01*\x84\x99\x99\x00\x86\x86\x86"
     )
 
+    # Mock attributedBody blob with extended length encoding (0x81 marker)
+    # This tests the case where text is longer than 127 bytes
+    # Format: + marker (0x2B) + 0x81 (extended) + 2-byte little-endian length + text
+    long_text = (
+        "This is a longer message that exceeds 127 bytes to test the extended length "
+        "encoding format used by macOS Messages for longer strings. The 0x81 marker "
+        "indicates a 2-byte little-endian length follows."
+    )
+    long_text_bytes = long_text.encode("utf-8")
+    long_text_length = len(long_text_bytes)  # Should be > 127
+    attributed_body_blob_extended = (
+        # Header: streamtyped + class info
+        b"\x04\x0bstreamtyped\x81\xe8\x03\x84\x01\x40\x84\x84\x84\x12NSAttributedString"
+        b"\x00\x84\x84\x08NSObject\x00\x85\x92\x84\x84\x84\x08NSString\x01\x94\x84\x01"
+        # + marker (0x2B) + 0x81 (extended length) + 2-byte little-endian length
+        + b"\x2b\x81" + long_text_length.to_bytes(2, "little")
+        # The actual text
+        + long_text_bytes
+        # Terminator and trailing structure
+        + b"\x86\x84\x02iI\x01\x10\x92\x84\x84\x84\x0cNSDictionary\x00\x94\x84\x01i\x01"
+        b"\x92\x84\x96\x96\x1d__kIMMes sagePartAttributeName\x86\x92\x84\x84\x84\x08"
+        b"NSNumber\x00\x84\x84\x07NSValue\x00\x94\x84\x01*\x84\x99\x99\x00\x86\x86\x86"
+    )
+
     messages = [
         # Chat 1: Regular conversation
         (1, "msg001", "Hey, are you free for lunch?", None, to_apple_time(BASE_DATE), 0, 1, 0, None, 0, None, None, None, None),
@@ -194,6 +218,10 @@ def test_db_path(tmp_path):
         # Chat 1: Message with text ONLY in attributedBody (text column is NULL)
         # This tests the attributedBody extraction fallback
         (16, "msg016", None, attributed_body_blob, to_apple_time(BASE_DATE + timedelta(minutes=30)), 1, None, 0, None, 0, None, None, None, None),
+
+        # Chat 1: Message with extended length encoding in attributedBody (text > 127 bytes)
+        # This tests the 0x81 extended length marker
+        (17, "msg017", None, attributed_body_blob_extended, to_apple_time(BASE_DATE + timedelta(minutes=31)), 1, None, 0, None, 0, None, None, None, None),
     ]
 
     conn.executemany(
@@ -207,7 +235,7 @@ def test_db_path(tmp_path):
 
     # Link messages to chats
     chat_message_joins = [
-        (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10), (1, 15), (1, 16),
+        (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10), (1, 15), (1, 16), (1, 17),
         (2, 11), (2, 12),
         (3, 13), (3, 14),
     ]

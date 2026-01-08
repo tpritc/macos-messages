@@ -32,36 +32,113 @@ def _extract_text_from_attributed_body(blob: bytes | None) -> str | None:
 
     The attributedBody column contains an NSKeyedArchiver-encoded
     NSAttributedString. The plain text is stored as a UTF-8 string
-    after a type marker and length byte.
+    after a type marker and length byte(s).
+
+    Length encoding formats after + marker (0x2B):
+    - Simple: + <1 byte length> <text> (length < 0x80, up to 127 bytes)
+    - Extended: + 0x81 <2 bytes little-endian length> <text> (up to 65535 bytes)
+    - Extended: + 0x82 <3 bytes little-endian length> <text>
+    - Extended: + 0x83 <4 bytes little-endian length> <text>
+
+    Alternative formats:
+    - 0x4F 0x10 <1 byte>: length in next byte
+    - 0x4F 0x11 <2 bytes>: length in next 2 bytes big-endian
+    - I <4 byte big-endian length> <text>
     """
     if not blob:
         return None
 
     try:
         # Look for the NSString marker followed by the text
-        # Format: NSString <type> <marker> <marker> <type> <length> <text>
-        # The text appears after NSString...+<length_byte>
         text_section = blob.split(b"NSString")[1].split(b"NSDictionary")[0]
 
-        # Find the + marker (0x2B) followed by length byte and text
-        # Pattern: 0x2B <length> <text bytes> 0x86
+        # Try + marker format (most common)
+        # Pattern: 0x2B <length encoding> <text bytes>
         plus_idx = text_section.find(b"+")
-        if plus_idx != -1:
-            # Length byte is right after +
-            length = text_section[plus_idx + 1]
-            if length > 0 and plus_idx + 2 + length <= len(text_section):
-                text_bytes = text_section[plus_idx + 2 : plus_idx + 2 + length]
-                return text_bytes.decode("utf-8", errors="ignore").strip() or None
+        if plus_idx != -1 and plus_idx + 2 < len(text_section):
+            length_marker = text_section[plus_idx + 1]
 
-        # Alternative: look for I marker (0x49) for longer texts
+            if length_marker < 0x80:
+                # Simple 1-byte length (0-127)
+                length = length_marker
+                text_start = plus_idx + 2
+            elif length_marker == 0x81:
+                # Extended: 2 bytes little-endian length follow
+                if plus_idx + 4 <= len(text_section):
+                    length = int.from_bytes(text_section[plus_idx + 2 : plus_idx + 4], "little")
+                    text_start = plus_idx + 4
+                else:
+                    length = 0
+                    text_start = 0
+            elif length_marker == 0x82:
+                # Extended: 3 bytes little-endian length follow
+                if plus_idx + 5 <= len(text_section):
+                    length = int.from_bytes(text_section[plus_idx + 2 : plus_idx + 5], "little")
+                    text_start = plus_idx + 5
+                else:
+                    length = 0
+                    text_start = 0
+            elif length_marker == 0x83:
+                # Extended: 4 bytes little-endian length follow
+                if plus_idx + 6 <= len(text_section):
+                    length = int.from_bytes(text_section[plus_idx + 2 : plus_idx + 6], "little")
+                    text_start = plus_idx + 6
+                else:
+                    length = 0
+                    text_start = 0
+            else:
+                length = 0
+                text_start = 0
+
+            if length > 0 and text_start + length <= len(text_section):
+                text_bytes = text_section[text_start : text_start + length]
+                result = text_bytes.decode("utf-8", errors="ignore").strip()
+                if result:
+                    return result
+
+        # Try bplist-style extended length encoding (alternative format)
+        # Look for 0x4F which indicates extended length encoding
+        for i in range(len(text_section) - 2):
+            if text_section[i] == 0x4F:  # Extended length marker
+                size_marker = text_section[i + 1]
+                if size_marker == 0x10:  # 1-byte length
+                    length = text_section[i + 2]
+                    start = i + 3
+                    if start + length <= len(text_section):
+                        text_bytes = text_section[start : start + length]
+                        result = text_bytes.decode("utf-8", errors="ignore").strip()
+                        if result and len(result) >= 1:
+                            return result
+                elif size_marker == 0x11:  # 2-byte length (big-endian)
+                    if i + 4 <= len(text_section):
+                        length = int.from_bytes(text_section[i + 2 : i + 4], "big")
+                        start = i + 4
+                        if 0 < length < 100000 and start + length <= len(text_section):
+                            text_bytes = text_section[start : start + length]
+                            result = text_bytes.decode("utf-8", errors="ignore").strip()
+                            if result and len(result) >= 1:
+                                return result
+                elif size_marker == 0x12:  # 4-byte length (big-endian)
+                    if i + 6 <= len(text_section):
+                        length = int.from_bytes(text_section[i + 2 : i + 6], "big")
+                        start = i + 6
+                        if 0 < length < 100000 and start + length <= len(text_section):
+                            text_bytes = text_section[start : start + length]
+                            result = text_bytes.decode("utf-8", errors="ignore").strip()
+                            if result and len(result) >= 1:
+                                return result
+
+        # Legacy format: I marker (0x49) for longer texts
         # Pattern: I <4-byte length> <text>
         i_idx = text_section.find(b"I")
         if i_idx != -1 and i_idx + 5 < len(text_section):
             # 4-byte big-endian length after I
             length = int.from_bytes(text_section[i_idx + 1 : i_idx + 5], "big")
-            if 0 < length < 10000 and i_idx + 5 + length <= len(text_section):
+            if 0 < length < 100000 and i_idx + 5 + length <= len(text_section):
                 text_bytes = text_section[i_idx + 5 : i_idx + 5 + length]
-                return text_bytes.decode("utf-8", errors="ignore").strip() or None
+                result = text_bytes.decode("utf-8", errors="ignore").strip()
+                if result:
+                    return result
 
     except (IndexError, UnicodeDecodeError, ValueError):
         pass

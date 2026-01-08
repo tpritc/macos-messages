@@ -245,6 +245,19 @@ class TestMessage:
         msg = messages_db.message(16)
         assert msg.text == "Hello from blob"
 
+    def test_message_text_from_attributed_body_extended_length(self, messages_db):
+        """Message with extended length encoding (0x81) should extract full text."""
+        # Message 17 has text=NULL but attributedBody contains a long message (>127 bytes)
+        # using the 0x81 extended length encoding format
+        msg = messages_db.message(17)
+        expected_text = (
+            "This is a longer message that exceeds 127 bytes to test the extended length "
+            "encoding format used by macOS Messages for longer strings. The 0x81 marker "
+            "indicates a 2-byte little-endian length follows."
+        )
+        assert msg.text == expected_text
+        assert len(msg.text) > 127  # Verify it's actually a long message
+
     def test_messages_list_includes_attributed_body_text(self, messages_db):
         """messages() should also extract text from attributedBody."""
         msgs = list(messages_db.messages(chat_id=1, limit=100))
