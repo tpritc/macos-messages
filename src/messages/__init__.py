@@ -12,6 +12,7 @@ from .models import (
     Reaction,
     ReactionType,
 )
+from .search_index import SearchIndex, SearchResult
 
 __version__ = "0.1.0"
 
@@ -26,6 +27,8 @@ __all__ = [
     "ReactionType",
     "MessageEffect",
     "EditRecord",
+    "SearchIndex",
+    "SearchResult",
     "get_db",
 ]
 
