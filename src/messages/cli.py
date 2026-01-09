@@ -195,6 +195,12 @@ def format_date_header(dt: datetime) -> str:
 @click.option("--chat", "-c", "chat_id", help="Chat ID or display name")
 @click.option("--with", "-w", "with_contact", help="Contact name (exact match)")
 @click.option("--search", "-s", "search_query", help="Search messages for text")
+@click.option(
+    "--search-mode", "-m",
+    type=click.Choice(["basic", "keyword", "stemmed", "hybrid"], case_sensitive=False),
+    default="basic",
+    help="Search mode: basic (SQL LIKE), keyword (FTS), stemmed, or hybrid (all methods)",
+)
 @click.option("--since", type=click.DateTime(), help="After date (YYYY-MM-DD)")
 @click.option("--before", type=click.DateTime(), help="Before date (YYYY-MM-DD)")
 @click.option("--first", "-f", "first_n", type=int, help="Show first N messages (oldest)")
@@ -209,6 +215,7 @@ def cli(
     chat_id: str | None,
     with_contact: str | None,
     search_query: str | None,
+    search_mode: str,
     since: datetime | None,
     before: datetime | None,
     first_n: int | None,
@@ -219,13 +226,14 @@ def cli(
     """Read messages from macOS Messages.app.
 
     Requires Full Disk Access permission for Terminal.
-    
+
     \b
     Examples:
       messages --chat 42              List messages from chat ID 42
       messages --chat "Mom"           List messages from chat named "Mom"
       messages --with "John Doe"      List messages with contact John Doe
       messages --search "dinner"      Search all messages for "dinner"
+      messages --search "meeting" -m hybrid  Search with all methods combined
     """
     ctx.ensure_object(dict)
     
@@ -270,6 +278,7 @@ def cli(
         chat_id=chat_id,
         with_contact=with_contact,
         search_query=search_query,
+        search_mode=search_mode,
         since=since,
         before=before,
         first_n=first_n,
@@ -344,11 +353,85 @@ def _resolve_contact_chat_ids(db: "messages.MessagesDB", contact_name: str) -> l
     return matching_ids
 
 
+def _do_search(
+    db: "messages.MessagesDB",
+    query: str,
+    *,
+    search_mode: str,
+    chat_id: int | None,
+    chat_ids: list[int] | None,
+    after: datetime | None,
+    before: datetime | None,
+    limit: int,
+) -> list[Message]:
+    """Perform search using the specified search mode.
+
+    Args:
+        db: MessagesDB instance
+        query: Search query string
+        search_mode: Search mode (basic, keyword, stemmed, hybrid)
+        chat_id: Single chat ID filter
+        chat_ids: Multiple chat IDs filter
+        after: After date filter
+        before: Before date filter
+        limit: Maximum results
+
+    Returns:
+        List of Message objects matching the query
+    """
+    if search_mode == "basic":
+        # Use the original SQL LIKE search
+        return list(
+            db.search(
+                query,
+                chat_id=chat_id,
+                chat_ids=chat_ids,
+                after=after,
+                before=before,
+                limit=limit,
+            )
+        )
+
+    # Use enhanced search
+    from messages.hybrid_search import HybridSearch, SearchMode
+
+    hybrid = HybridSearch(db)
+
+    # Map CLI mode names to SearchMode enum
+    mode_map = {
+        "keyword": SearchMode.KEYWORD,
+        "stemmed": SearchMode.STEMMED,
+        "hybrid": SearchMode.HYBRID,
+    }
+    mode = mode_map.get(search_mode, SearchMode.HYBRID)
+
+    # Search and convert results to Message objects
+    results = []
+    for result in hybrid.search(
+        query,
+        mode=mode,
+        chat_id=chat_id,
+        chat_ids=chat_ids,
+        after=after,
+        before=before,
+        limit=limit,
+    ):
+        try:
+            msg = db.message(result.message_id)
+            results.append(msg)
+        except LookupError:
+            # Message may have been deleted
+            continue
+
+    return results
+
+
 def _list_messages(
     ctx: click.Context,
     chat_id: str | None,
     with_contact: str | None,
     search_query: str | None,
+    search_mode: str,
     since: datetime | None,
     before: datetime | None,
     first_n: int | None,
@@ -358,10 +441,10 @@ def _list_messages(
 ) -> None:
     """List or search messages based on provided options."""
     db = ctx.obj["db"]
-    
+
     resolved_chat_id = None
     resolved_chat_ids = None
-    
+
     # Resolve chat ID from --chat option
     if chat_id:
         try:
@@ -369,7 +452,7 @@ def _list_messages(
         except click.ClickException as e:
             click.echo(f"Error: {e.message}", err=True)
             sys.exit(1)
-    
+
     # Resolve chat IDs from --with option (may return multiple chats for same contact)
     if with_contact:
         resolved_chat_ids = _resolve_contact_chat_ids(db, with_contact)
@@ -378,7 +461,7 @@ def _list_messages(
             if as_json:
                 click.echo("[]")
             return
-    
+
     # Determine limit and direction
     # If --first is specified, use it (oldest first)
     # Otherwise use --last (newest first, the default)
@@ -388,20 +471,20 @@ def _list_messages(
     else:
         limit = last_n
         reverse = True
-    
+
     # Fetch more if filtering by attachments, since we filter after
     fetch_limit = limit * 10 if with_attachments else limit
-    
+
     if search_query:
-        results = list(
-            db.search(
-                search_query,
-                chat_id=resolved_chat_id,
-                chat_ids=resolved_chat_ids,
-                after=since,
-                before=before,
-                limit=fetch_limit,
-            )
+        results = _do_search(
+            db,
+            search_query,
+            search_mode=search_mode,
+            chat_id=resolved_chat_id,
+            chat_ids=resolved_chat_ids,
+            after=since,
+            before=before,
+            limit=fetch_limit,
         )
     else:
         if resolved_chat_id is None and resolved_chat_ids is None:
@@ -491,3 +574,133 @@ def contacts(ctx: click.Context, search_query: str | None, limit: int, as_json: 
         for contact in results:
             if contact.display_name:
                 click.echo(contact.display_name)
+
+
+@cli.group()
+@click.pass_context
+def index(ctx: click.Context) -> None:
+    """Manage search indexes for enhanced search features.
+
+    The search index enables advanced search capabilities including:
+    - Fast full-text search with FTS5
+    - Stemmed search for word variants
+    - Semantic search for meaning-based queries (requires extra install)
+
+    \b
+    Build the index before using enhanced search modes:
+      messages index build
+
+    \b
+    Check index status:
+      messages index stats
+    """
+    pass
+
+
+@index.command()
+@click.option("--semantic", is_flag=True, help="Also build semantic search index (requires sentence-transformers)")
+@click.option("--rebuild", is_flag=True, help="Rebuild indexes from scratch")
+@click.pass_context
+def build(ctx: click.Context, semantic: bool, rebuild: bool) -> None:
+    """Build or update the search index.
+
+    By default, only builds the full-text and stemmed search indexes.
+    Use --semantic to also build the semantic search index (requires
+    sentence-transformers to be installed).
+
+    \b
+    Examples:
+      messages index build              Build FTS and stemmed indexes
+      messages index build --semantic   Also build semantic index
+      messages index build --rebuild    Rebuild from scratch
+    """
+    from messages.hybrid_search import HybridSearch
+
+    db = ctx.obj["db"]
+    hybrid = HybridSearch(db)
+
+    def progress_callback(stage: str, indexed: int, total: int | None) -> None:
+        if total:
+            click.echo(f"  {stage}: {indexed}/{total} messages indexed", nl=False)
+            click.echo("\r", nl=False)
+        else:
+            click.echo(f"Building {stage} index...")
+
+    click.echo("Building search indexes...")
+
+    try:
+        stats = hybrid.build_indexes(
+            include_semantic=semantic,
+            full_rebuild=rebuild,
+            progress_callback=progress_callback,
+        )
+
+        click.echo()
+        click.echo(f"FTS index: {stats['fts_indexed']} messages indexed")
+
+        if semantic:
+            if stats.get("semantic_available", True):
+                click.echo(f"Semantic index: {stats.get('semantic_indexed', 0)} messages indexed")
+            else:
+                click.echo("Semantic index: sentence-transformers not installed")
+                click.echo("  Install with: pip install macos-messages[semantic]")
+
+        click.echo("Done!")
+
+    except Exception as e:
+        click.echo(f"Error building index: {e}", err=True)
+        sys.exit(1)
+
+
+@index.command()
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def stats(ctx: click.Context, as_json: bool) -> None:
+    """Show search index statistics.
+
+    Displays information about the search indexes including:
+    - Number of indexed messages
+    - Index file sizes
+    - Stemmer and embedding model status
+    """
+    from messages.hybrid_search import HybridSearch
+
+    db = ctx.obj["db"]
+    hybrid = HybridSearch(db)
+
+    index_stats = hybrid.get_stats()
+
+    if as_json:
+        click.echo(json.dumps(index_stats, default=json_serializer, indent=2))
+    else:
+        # FTS stats
+        fts = index_stats.get("fts", {})
+        click.echo("Full-text Search Index:")
+        click.echo(f"  Indexed messages: {fts.get('indexed_messages', 0)}")
+        if fts.get("index_size_bytes"):
+            size_mb = fts["index_size_bytes"] / (1024 * 1024)
+            click.echo(f"  Index size: {size_mb:.2f} MB")
+
+        stemmer = fts.get("stemmer", {})
+        if stemmer.get("available"):
+            click.echo(f"  Stemmer: {stemmer.get('algorithm', 'unknown')}")
+        else:
+            click.echo("  Stemmer: not available")
+
+        click.echo()
+
+        # Semantic stats
+        semantic = index_stats.get("semantic", {})
+        click.echo("Semantic Search Index:")
+        if semantic.get("available", semantic.get("model_available")):
+            click.echo(f"  Indexed messages: {semantic.get('indexed_messages', 0)}")
+            if semantic.get("embedding_dimension"):
+                click.echo(f"  Embedding dimension: {semantic['embedding_dimension']}")
+            if semantic.get("model_name"):
+                click.echo(f"  Model: {semantic['model_name']}")
+            if semantic.get("index_size_bytes"):
+                size_mb = semantic["index_size_bytes"] / (1024 * 1024)
+                click.echo(f"  Index size: {size_mb:.2f} MB")
+        else:
+            click.echo("  Not available (sentence-transformers not installed)")
+            click.echo("  Install with: pip install macos-messages[semantic]")
