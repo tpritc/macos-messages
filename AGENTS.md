@@ -60,3 +60,14 @@ Message text can be in either the `text` column or encoded in `attributedBody` (
 ## Testing
 
 Tests use a mock database created in `tests/conftest.py` with the `test_db_path` and `messages_db` fixtures. Contact resolution is mocked to return predictable names.
+
+## Documentation
+
+**Important:** When making changes, always check if documentation needs updating:
+
+- **README.md** - Update if adding/changing CLI options, new features, installation steps, or usage examples
+- **docs/** - Public documentation site. Update when adding features, changing APIs, or modifying user-facing behavior
+- **Docstrings** - Update function/class docstrings if changing their behavior or parameters
+- **AGENTS.md** - Update if changing architecture, adding new modules, or modifying development workflows
+
+Before completing any PR or significant change, ask: "Would a user or developer need to know about this change?" If yes, update the relevant docs.
