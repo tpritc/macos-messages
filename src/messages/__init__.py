@@ -13,6 +13,7 @@ from .models import (
     ReactionType,
 )
 from .search_index import SearchIndex, SearchResult
+from .embeddings import EmbeddingIndex, SemanticSearchResult, is_available as embeddings_available
 
 __version__ = "0.1.0"
 
@@ -29,6 +30,9 @@ __all__ = [
     "EditRecord",
     "SearchIndex",
     "SearchResult",
+    "EmbeddingIndex",
+    "SemanticSearchResult",
+    "embeddings_available",
     "get_db",
 ]
 

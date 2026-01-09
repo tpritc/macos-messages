@@ -27,6 +27,16 @@ dependencies = [
     "snowballstemmer>=2.0",
 ]
 
+[project.optional-dependencies]
+# Semantic search with local embedding models
+semantic = [
+    "sentence-transformers>=2.2.0",
+]
+# All optional features
+all = [
+    "sentence-transformers>=2.2.0",
+]
+
 [project.scripts]
 messages = "messages.cli:cli"
 
