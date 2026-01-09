@@ -81,7 +81,7 @@ class TestMessagesRoot:
         assert result.exit_code == 0
         assert "dinner" in result.output.lower()
 
-    def test_messages_by_chat_display_name_multiple_matches(self, runner, test_db_path, monkeypatch):
+    def test_messages_by_chat_name_multiple_matches(self, runner, test_db_path, monkeypatch):
         """--chat with ambiguous name should error with list of matches."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
@@ -192,7 +192,10 @@ class TestMessagesRoot:
         assert result.exit_code == 0
         # Count message lines
         import re
-        msg_lines = [l for l in result.output.split("\n") if re.search(r"\(\d+:\d+[ap]m\):", l)]
+        msg_lines = [
+            line for line in result.output.split("\n")
+            if re.search(r"\(\d+:\d+[ap]m\):", line)
+        ]
         assert len(msg_lines) == 2
 
     def test_messages_with_attachments(self, runner, test_db_path, monkeypatch):
@@ -302,7 +305,7 @@ class TestChatsCommand:
 
         result = runner.invoke(cli, ["--db", str(test_db_path), "chats", "--limit", "1"])
         assert result.exit_code == 0
-        lines = [l for l in result.output.strip().split("\n") if l]
+        lines = [line for line in result.output.strip().split("\n") if line]
         assert len(lines) == 1
 
     def test_chats_service_filter(self, runner, test_db_path, monkeypatch):
@@ -378,7 +381,7 @@ class TestContactsCommand:
 
         result = runner.invoke(cli, ["contacts", "--limit", "1"])
         assert result.exit_code == 0
-        lines = [l for l in result.output.strip().split("\n") if l]
+        lines = [line for line in result.output.strip().split("\n") if line]
         assert len(lines) <= 1
 
     def test_contacts_json_output(self, runner, mock_contacts, monkeypatch):

@@ -3,13 +3,12 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional
 
 # Apple epoch: 2001-01-01 00:00:00 UTC
 APPLE_EPOCH = datetime(2001, 1, 1)
 
 
-def apple_time_to_datetime(ns: Optional[int]) -> Optional[datetime]:
+def apple_time_to_datetime(ns: int | None) -> datetime | None:
     """Convert Apple nanoseconds since 2001-01-01 to datetime.
 
     Args:
@@ -108,7 +107,7 @@ class Handle:
     id: int
     identifier: str  # Phone number or email
     service: str  # "iMessage", "SMS", "RCS"
-    display_name: Optional[str] = None  # Resolved from Contacts.app
+    display_name: str | None = None  # Resolved from Contacts.app
 
 
 @dataclass
@@ -117,7 +116,7 @@ class Chat:
 
     id: int
     identifier: str
-    display_name: Optional[str]
+    display_name: str | None
     service: str
     participants: list[Handle] = field(default_factory=list)
 
@@ -128,10 +127,10 @@ class ChatSummary:
 
     id: int
     identifier: str
-    display_name: Optional[str]
+    display_name: str | None
     service: str
     message_count: int
-    last_message_date: Optional[datetime]
+    last_message_date: datetime | None
 
 
 @dataclass
@@ -157,19 +156,19 @@ class Message:
 
     id: int
     chat_id: int
-    text: Optional[str]
+    text: str | None
     date: datetime
     is_from_me: bool
-    sender: Optional[Handle]
+    sender: Handle | None
     has_attachments: bool
     reactions: list[Reaction] = field(default_factory=list)
-    effect: Optional[MessageEffect] = None
+    effect: MessageEffect | None = None
     edit_history: list[EditRecord] = field(default_factory=list)
     is_edited: bool = False
     is_unsent: bool = False
-    transcription: Optional[str] = None
-    reply_to_id: Optional[int] = None
-    thread_id: Optional[int] = None
+    transcription: str | None = None
+    reply_to_id: int | None = None
+    thread_id: int | None = None
 
 
 @dataclass
@@ -179,7 +178,7 @@ class Attachment:
     id: int
     message_id: int
     filename: str
-    mime_type: Optional[str]
+    mime_type: str | None
     path: str  # Local path (may not exist if in iCloud)
     size: int
     is_sticker: bool = False

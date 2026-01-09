@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-import pytest
-
 
 class TestDateConversion:
     """Tests for Apple date format conversion."""
@@ -148,7 +146,7 @@ class TestMessage:
 
     def test_message_creation(self):
         """Should create Message with required fields."""
-        from messages.models import Message, Handle
+        from messages.models import Message
 
         msg = Message(
             id=1,
@@ -247,7 +245,7 @@ class TestReaction:
 
     def test_reaction_creation(self):
         """Should create Reaction with all fields."""
-        from messages.models import Reaction, ReactionType, Handle
+        from messages.models import Handle, Reaction, ReactionType
 
         handle = Handle(id=1, identifier="+15551234567", service="iMessage", display_name="Jane")
         reaction = Reaction(

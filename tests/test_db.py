@@ -3,7 +3,6 @@
 from datetime import datetime, timedelta
 
 import pytest
-
 from conftest import BASE_DATE
 
 

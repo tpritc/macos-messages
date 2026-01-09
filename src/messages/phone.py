@@ -123,6 +123,9 @@ def phone_match(query: str, stored: str, default_region: str | None = None) -> b
 
         # Check if one ends with the other (partial match)
         if len(query_clean) >= 7 and len(stored_clean) >= 7:
-            return query_clean.endswith(stored_clean[-7:]) or stored_clean.endswith(query_clean[-7:])
+            if query_clean.endswith(stored_clean[-7:]):
+                return True
+            if stored_clean.endswith(query_clean[-7:]):
+                return True
 
         return False

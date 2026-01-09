@@ -3,15 +3,15 @@
 import json
 import sys
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import click
 
 import messages
-from messages.models import Message
 from messages.contacts import get_all_contacts, search_contacts
+from messages.models import Message
 
 
 def json_serializer(obj: Any) -> Any:
@@ -23,9 +23,9 @@ def json_serializer(obj: Any) -> Any:
     if isinstance(obj, datetime):
         # Naive datetimes from the Messages database are in UTC
         if obj.tzinfo is None:
-            utc_dt = obj.replace(tzinfo=timezone.utc)
+            utc_dt = obj.replace(tzinfo=UTC)
         else:
-            utc_dt = obj.astimezone(timezone.utc)
+            utc_dt = obj.astimezone(UTC)
         # Format as ISO 8601 with Z suffix
         return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     if hasattr(obj, "value"):  # Enum
@@ -118,7 +118,10 @@ def format_message(msg: Message, verbose: bool = False, attachments: list | None
             else:
                 att_type = "file"
             # Use the path, expanding ~ to full path
-            att_path = att.path.replace("~", str(Path.home())) if att.path else att.filename or "unknown"
+            if att.path:
+                att_path = att.path.replace("~", str(Path.home()))
+            else:
+                att_path = att.filename or "unknown"
             attachment_parts.append(f"[{att_type}:{att_path}]")
         attachment_str = " ".join(attachment_parts)
         if text:
@@ -142,7 +145,7 @@ def format_message(msg: Message, verbose: bool = False, attachments: list | None
     # Convert UTC to local time for display
     # Naive datetimes from the Messages database are in UTC
     if msg.date.tzinfo is None:
-        utc_dt = msg.date.replace(tzinfo=timezone.utc)
+        utc_dt = msg.date.replace(tzinfo=UTC)
     else:
         utc_dt = msg.date
     local_dt = utc_dt.astimezone()  # Convert to local timezone
@@ -173,7 +176,7 @@ def format_date_header(dt: datetime) -> str:
     Naive datetimes from the database are treated as UTC.
     """
     if dt.tzinfo is None:
-        utc_dt = dt.replace(tzinfo=timezone.utc)
+        utc_dt = dt.replace(tzinfo=UTC)
     else:
         utc_dt = dt
     local_dt = utc_dt.astimezone()  # Convert to local timezone
@@ -198,7 +201,10 @@ def format_date_header(dt: datetime) -> str:
 @click.option("--since", type=click.DateTime(), help="After date (YYYY-MM-DD)")
 @click.option("--before", type=click.DateTime(), help="Before date (YYYY-MM-DD)")
 @click.option("--first", "-f", "first_n", type=int, help="Show first N messages (oldest)")
-@click.option("--last", "-l", "last_n", type=int, default=50, help="Show last N messages (newest, default: 50)")
+@click.option(
+    "--last", "-l", "last_n", type=int, default=50,
+    help="Show last N messages (newest, default: 50)"
+)
 @click.option("--with-attachments", is_flag=True, help="Only show messages with attachments")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 @click.pass_context
@@ -309,7 +315,10 @@ def _resolve_chat_id(db: "messages.MessagesDB", chat_id_or_name: str) -> int:
         raise click.ClickException(f"Chat '{chat_id_or_name}' not found")
     
     # Check for exact match first
-    exact_matches = [c for c in matches if c.display_name and c.display_name.lower() == chat_id_or_name.lower()]
+    exact_matches = [
+        c for c in matches
+        if c.display_name and c.display_name.lower() == chat_id_or_name.lower()
+    ]
     if len(exact_matches) == 1:
         return exact_matches[0].id
     
@@ -426,7 +435,8 @@ def _list_messages(
         results = [m for m in results if m.has_attachments][:limit]
     
     if as_json:
-        click.echo(json.dumps([message_to_dict(m, db) for m in results], default=json_serializer, indent=2))
+        output = [message_to_dict(m, db) for m in results]
+        click.echo(json.dumps(output, default=json_serializer, indent=2))
     else:
         current_date = None
         for msg in results:
@@ -437,7 +447,9 @@ def _list_messages(
                 click.echo(format_date_header(msg.date))
                 click.echo()
                 current_date = msg_date
-            msg_attachments = list(db.attachments(message_id=msg.id)) if msg.has_attachments else None
+            msg_attachments = None
+            if msg.has_attachments:
+                msg_attachments = list(db.attachments(message_id=msg.id))
             click.echo(format_message(msg, verbose=False, attachments=msg_attachments))
 
 
@@ -447,7 +459,13 @@ def _list_messages(
 @click.option("--limit", "-n", type=int, default=20)
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 @click.pass_context
-def chats(ctx: click.Context, search_query: str | None, service: str | None, limit: int, as_json: bool) -> None:
+def chats(
+    ctx: click.Context,
+    search_query: str | None,
+    service: str | None,
+    limit: int,
+    as_json: bool,
+) -> None:
     """List conversations."""
     db = ctx.obj["db"]
 

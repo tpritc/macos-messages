@@ -4,7 +4,6 @@ import sqlite3
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .phone import normalize_phone
 
@@ -16,13 +15,13 @@ DEFAULT_CONTACTS_DB_PATH = Path.home() / "Library" / "Application Support" / "Ad
 class Contact:
     """A contact from the macOS Contacts database."""
 
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    nickname: Optional[str] = None
-    organization: Optional[str] = None
+    first_name: str | None = None
+    last_name: str | None = None
+    nickname: str | None = None
+    organization: str | None = None
 
     @property
-    def display_name(self) -> Optional[str]:
+    def display_name(self) -> str | None:
         """Format the contact's display name as 'First Last'.
 
         Returns:
@@ -45,7 +44,8 @@ def _find_contacts_databases() -> list[Path]:
 
     macOS stores contacts in multiple locations:
     - Main database: ~/Library/Application Support/AddressBook/AddressBook-v22.abcddb
-    - Per-source databases: ~/Library/Application Support/AddressBook/Sources/*/AddressBook-v22.abcddb
+    - Per-source databases:
+      ~/Library/Application Support/AddressBook/Sources/*/AddressBook-v22.abcddb
 
     Returns:
         List of paths to database files, with source databases first (they contain
@@ -194,7 +194,7 @@ def _get_contact_lookup() -> dict[str, Contact]:
     return _contact_lookup
 
 
-def _get_contact_impl(identifier: str) -> Optional[Contact]:
+def _get_contact_impl(identifier: str) -> Contact | None:
     """Look up a Contact from the macOS Contacts database.
 
     Args:
@@ -235,7 +235,7 @@ def _get_contact_impl(identifier: str) -> Optional[Contact]:
     return None
 
 
-def _get_contact_name_impl(identifier: str) -> Optional[str]:
+def _get_contact_name_impl(identifier: str) -> str | None:
     """Look up a display name from macOS Contacts database.
 
     Args:
@@ -251,7 +251,7 @@ def _get_contact_name_impl(identifier: str) -> Optional[str]:
 
 
 def _make_get_contact_name():
-    def _get_contact_name(identifier: str) -> Optional[str]:
+    def _get_contact_name(identifier: str) -> str | None:
         module = sys.modules[__name__]
         current = module.__dict__.get("get_contact_name")
         if current is not wrapper:

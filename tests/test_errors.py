@@ -134,7 +134,8 @@ class TestCLIErrors:
             "messages", "--with", "not-a-phone"
         ])
         assert result.exit_code != 0
-        assert "phone" in result.output.lower() or "parse" in result.output.lower() or "error" in result.output.lower()
+        output_lower = result.output.lower()
+        assert "phone" in output_lower or "parse" in output_lower or "error" in output_lower
 
     def test_cli_no_options_shows_help(self, runner):
         """CLI should show help when no options provided."""
@@ -175,7 +176,9 @@ class TestEdgeCases:
         import sqlite3
         conn = sqlite3.connect(test_db_path)
         conn.execute(
-            "INSERT INTO chat (ROWID, guid, chat_identifier, display_name, service_name) VALUES (?, ?, ?, ?, ?)",
+            """INSERT INTO chat
+            (ROWID, guid, chat_identifier, display_name, service_name)
+            VALUES (?, ?, ?, ?, ?)""",
             (99, "empty-chat", "empty@example.com", "Empty Chat", "iMessage")
         )
         conn.commit()

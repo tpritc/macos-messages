@@ -1,12 +1,11 @@
 """Database connection and queries for Messages.app data."""
 
 import fnmatch
-import plistlib
 import re
 import sqlite3
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional
 
 from .contacts import get_contact_name
 from .models import (
@@ -15,7 +14,6 @@ from .models import (
     Attachment,
     Chat,
     ChatSummary,
-    EditRecord,
     Handle,
     Message,
     Reaction,
@@ -211,7 +209,7 @@ class MessagesDB:
             self._region = get_system_region()
         return self._region
 
-    def _resolve_handle(self, handle_id: Optional[int]) -> Optional[Handle]:
+    def _resolve_handle(self, handle_id: int | None) -> Handle | None:
         """Look up a handle by ID and optionally resolve contact name."""
         if handle_id is None:
             return None
@@ -315,8 +313,8 @@ class MessagesDB:
     def chats(
         self,
         *,
-        service: Optional[str] = None,
-        limit: Optional[int] = None,
+        service: str | None = None,
+        limit: int | None = None,
     ) -> Iterator[ChatSummary]:
         """List all chats, ordered by most recent activity.
 
@@ -472,11 +470,11 @@ class MessagesDB:
     def messages(
         self,
         *,
-        chat_id: Optional[int] = None,
-        chat_ids: Optional[list[int]] = None,
-        identifier: Optional[str] = None,
-        after: Optional[datetime] = None,
-        before: Optional[datetime] = None,
+        chat_id: int | None = None,
+        chat_ids: list[int] | None = None,
+        identifier: str | None = None,
+        after: datetime | None = None,
+        before: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
         include_unsent: bool = True,
@@ -597,10 +595,10 @@ class MessagesDB:
         self,
         query: str,
         *,
-        chat_id: Optional[int] = None,
-        chat_ids: Optional[list[int]] = None,
-        after: Optional[datetime] = None,
-        before: Optional[datetime] = None,
+        chat_id: int | None = None,
+        chat_ids: list[int] | None = None,
+        after: datetime | None = None,
+        before: datetime | None = None,
         limit: int = 50,
     ) -> Iterator[Message]:
         """Search messages by text content.
@@ -659,9 +657,9 @@ class MessagesDB:
     def attachments(
         self,
         *,
-        chat_id: Optional[int] = None,
-        message_id: Optional[int] = None,
-        mime_type: Optional[str] = None,
+        chat_id: int | None = None,
+        message_id: int | None = None,
+        mime_type: str | None = None,
         limit: int = 100,
         auto_download: bool = True,
     ) -> Iterator[Attachment]:

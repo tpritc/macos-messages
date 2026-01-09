@@ -2,7 +2,7 @@
 
 import pytest
 
-from messages.phone import normalize_phone, phone_match, get_system_region
+from messages.phone import get_system_region, normalize_phone, phone_match
 
 
 class TestNormalizePhone:

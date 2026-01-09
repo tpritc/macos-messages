@@ -1,8 +1,7 @@
 """Tests for contact resolution from macOS Contacts.app."""
 
-import pytest
 
-from messages.contacts import get_contact_name, get_all_contacts, search_contacts
+from messages.contacts import get_all_contacts, get_contact_name, search_contacts
 
 
 class TestGetContactName:
@@ -122,10 +121,12 @@ class TestContactResolutionInDB:
     def test_chat_display_name_from_contacts(self, messages_db):
         """1:1 chat display_name should come from contact resolution."""
         chats = list(messages_db.chats())
+        # Find chat 1 to verify it exists
         chat1 = next(c for c in chats if c.id == 1)
         # For 1:1 chats, display_name might be resolved from contacts
         # or might be None if no display_name in DB
         # This depends on implementation details
+        assert chat1 is not None
 
     def test_group_chat_display_name_preserved(self, messages_db):
         """Group chat display_name should come from DB, not contacts."""

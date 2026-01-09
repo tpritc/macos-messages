@@ -2,7 +2,6 @@
 
 import sqlite3
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -110,7 +109,8 @@ def test_db_path(tmp_path):
 
     # Insert chats
     conn.executemany(
-        "INSERT INTO chat (ROWID, guid, chat_identifier, display_name, service_name) VALUES (?, ?, ?, ?, ?)",
+        """INSERT INTO chat (ROWID, guid, chat_identifier, display_name, service_name)
+        VALUES (?, ?, ?, ?, ?)""",
         [
             (1, "iMessage;-;+15551234567", "+15551234567", None, "iMessage"),
             (2, "SMS;-;+447700900123", "+447700900123", None, "SMS"),
@@ -131,9 +131,9 @@ def test_db_path(tmp_path):
     )
 
     # Insert messages
-    # Format: (ROWID, guid, text, attributedBody, date, is_from_me, handle_id, cache_has_attachments,
-    #          associated_message_guid, associated_message_type, expressive_send_style_id,
-    #          date_edited, date_retracted, thread_originator_guid)
+    # Format: (ROWID, guid, text, attributedBody, date, is_from_me, handle_id,
+    #          cache_has_attachments, associated_message_guid, associated_message_type,
+    #          expressive_send_style_id, date_edited, date_retracted, thread_originator_guid)
 
     # Mock attributedBody blob containing "Hello from blob"
     # This mimics the NSKeyedArchiver format used by macOS Messages:
@@ -176,52 +176,89 @@ def test_db_path(tmp_path):
         b"NSNumber\x00\x84\x84\x07NSValue\x00\x94\x84\x01*\x84\x99\x99\x00\x86\x86\x86"
     )
 
+    birthday_effect = "com.apple.messages.effect.CKHappyBirthdayEffect"
     messages = [
         # Chat 1: Regular conversation
-        (1, "msg001", "Hey, are you free for lunch?", None, to_apple_time(BASE_DATE), 0, 1, 0, None, 0, None, None, None, None),
-        (2, "msg002", "Sure! Where were you thinking?", None, to_apple_time(BASE_DATE + timedelta(minutes=1)), 1, None, 0, None, 0, None, None, None, None),
-        (3, "msg003", "How about that new place on Main St?", None, to_apple_time(BASE_DATE + timedelta(minutes=2)), 0, 1, 0, None, 0, None, None, None, None),
+        (1, "msg001", "Hey, are you free for lunch?", None,
+         to_apple_time(BASE_DATE), 0, 1, 0, None, 0, None, None, None, None),
+        (2, "msg002", "Sure! Where were you thinking?", None,
+         to_apple_time(BASE_DATE + timedelta(minutes=1)), 1, None, 0,
+         None, 0, None, None, None, None),
+        (3, "msg003", "How about that new place on Main St?", None,
+         to_apple_time(BASE_DATE + timedelta(minutes=2)), 0, 1, 0,
+         None, 0, None, None, None, None),
 
         # Chat 1: Message with reaction (love reaction on msg002)
-        # associated_message_type: 2000 = love, 2001 = like, 2002 = dislike, 2003 = laugh, 2004 = emphasis, 2005 = question
-        (4, "msg004", "\ufffc", None, to_apple_time(BASE_DATE + timedelta(minutes=3)), 0, 1, 0, "msg002", 2000, None, None, None, None),
+        # associated_message_type: 2000=love, 2001=like, 2002=dislike,
+        # 2003=laugh, 2004=emphasis, 2005=question
+        (4, "msg004", "\ufffc", None,
+         to_apple_time(BASE_DATE + timedelta(minutes=3)), 0, 1, 0,
+         "msg002", 2000, None, None, None, None),
 
         # Chat 1: Another reaction (like on msg002)
-        (5, "msg005", "\ufffc", None, to_apple_time(BASE_DATE + timedelta(minutes=3, seconds=30)), 0, 1, 0, "msg002", 2001, None, None, None, None),
+        (5, "msg005", "\ufffc", None,
+         to_apple_time(BASE_DATE + timedelta(minutes=3, seconds=30)), 0, 1, 0,
+         "msg002", 2001, None, None, None, None),
 
         # Chat 1: Message with effect (balloons)
-        (6, "msg006", "Happy birthday!", None, to_apple_time(BASE_DATE + timedelta(minutes=5)), 1, None, 0, None, 0, "com.apple.messages.effect.CKHappyBirthdayEffect", None, None, None),
+        (6, "msg006", "Happy birthday!", None,
+         to_apple_time(BASE_DATE + timedelta(minutes=5)), 1, None, 0,
+         None, 0, birthday_effect, None, None, None),
 
         # Chat 1: Edited message (date_edited is set to indicate it was edited)
-        (7, "msg007", "Let's meet at 12:30", None, to_apple_time(BASE_DATE + timedelta(minutes=10)), 1, None, 0, None, 0, None, to_apple_time(BASE_DATE + timedelta(minutes=11)), None, None),
+        (7, "msg007", "Let's meet at 12:30", None,
+         to_apple_time(BASE_DATE + timedelta(minutes=10)), 1, None, 0,
+         None, 0, None, to_apple_time(BASE_DATE + timedelta(minutes=11)),
+         None, None),
 
         # Chat 1: Retracted/unsent message (date_retracted is set)
-        (8, "msg008", None, None, to_apple_time(BASE_DATE + timedelta(minutes=15)), 1, None, 0, None, 0, None, None, to_apple_time(BASE_DATE + timedelta(minutes=16)), None),
+        (8, "msg008", None, None,
+         to_apple_time(BASE_DATE + timedelta(minutes=15)), 1, None, 0,
+         None, 0, None, None,
+         to_apple_time(BASE_DATE + timedelta(minutes=16)), None),
 
         # Chat 1: Message with attachment
-        (9, "msg009", "Check out this photo!", None, to_apple_time(BASE_DATE + timedelta(minutes=20)), 0, 1, 1, None, 0, None, None, None, None),
+        (9, "msg009", "Check out this photo!", None,
+         to_apple_time(BASE_DATE + timedelta(minutes=20)), 0, 1, 1,
+         None, 0, None, None, None, None),
 
         # Chat 1: Threaded reply (reply to msg003)
-        (10, "msg010", "Yes! I've heard great things about it", None, to_apple_time(BASE_DATE + timedelta(minutes=25)), 1, None, 0, None, 0, None, None, None, "msg003"),
+        (10, "msg010", "Yes! I've heard great things about it", None,
+         to_apple_time(BASE_DATE + timedelta(minutes=25)), 1, None, 0,
+         None, 0, None, None, None, "msg003"),
 
         # Chat 2: SMS conversation (for service filtering tests)
-        (11, "msg011", "Got your text!", None, to_apple_time(BASE_DATE + timedelta(hours=1)), 0, 2, 0, None, 0, None, None, None, None),
-        (12, "msg012", "Great, talk soon", None, to_apple_time(BASE_DATE + timedelta(hours=1, minutes=5)), 1, None, 0, None, 0, None, None, None, None),
+        (11, "msg011", "Got your text!", None,
+         to_apple_time(BASE_DATE + timedelta(hours=1)), 0, 2, 0,
+         None, 0, None, None, None, None),
+        (12, "msg012", "Great, talk soon", None,
+         to_apple_time(BASE_DATE + timedelta(hours=1, minutes=5)), 1, None, 0,
+         None, 0, None, None, None, None),
 
         # Chat 3: Group chat messages
-        (13, "msg013", "Family dinner this Sunday?", None, to_apple_time(BASE_DATE + timedelta(hours=2)), 0, 1, 0, None, 0, None, None, None, None),
-        (14, "msg014", "I'm in!", None, to_apple_time(BASE_DATE + timedelta(hours=2, minutes=10)), 0, 3, 0, None, 0, None, None, None, None),
+        (13, "msg013", "Family dinner this Sunday?", None,
+         to_apple_time(BASE_DATE + timedelta(hours=2)), 0, 1, 0,
+         None, 0, None, None, None, None),
+        (14, "msg014", "I'm in!", None,
+         to_apple_time(BASE_DATE + timedelta(hours=2, minutes=10)), 0, 3, 0,
+         None, 0, None, None, None, None),
 
         # Chat 1: Message from a week ago (for date filtering)
-        (15, "msg015", "Old message from last week", None, to_apple_time(BASE_DATE - timedelta(days=7)), 0, 1, 0, None, 0, None, None, None, None),
+        (15, "msg015", "Old message from last week", None,
+         to_apple_time(BASE_DATE - timedelta(days=7)), 0, 1, 0,
+         None, 0, None, None, None, None),
 
         # Chat 1: Message with text ONLY in attributedBody (text column is NULL)
         # This tests the attributedBody extraction fallback
-        (16, "msg016", None, attributed_body_blob, to_apple_time(BASE_DATE + timedelta(minutes=30)), 1, None, 0, None, 0, None, None, None, None),
+        (16, "msg016", None, attributed_body_blob,
+         to_apple_time(BASE_DATE + timedelta(minutes=30)), 1, None, 0,
+         None, 0, None, None, None, None),
 
-        # Chat 1: Message with extended length encoding in attributedBody (text > 127 bytes)
+        # Chat 1: Message with extended length encoding in attributedBody
         # This tests the 0x81 extended length marker
-        (17, "msg017", None, attributed_body_blob_extended, to_apple_time(BASE_DATE + timedelta(minutes=31)), 1, None, 0, None, 0, None, None, None, None),
+        (17, "msg017", None, attributed_body_blob_extended,
+         to_apple_time(BASE_DATE + timedelta(minutes=31)), 1, None, 0,
+         None, 0, None, None, None, None),
     ]
 
     conn.executemany(
@@ -235,7 +272,8 @@ def test_db_path(tmp_path):
 
     # Link messages to chats
     chat_message_joins = [
-        (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10), (1, 15), (1, 16), (1, 17),
+        (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7),
+        (1, 8), (1, 9), (1, 10), (1, 15), (1, 16), (1, 17),
         (2, 11), (2, 12),
         (3, 13), (3, 14),
     ]
@@ -245,12 +283,18 @@ def test_db_path(tmp_path):
     )
 
     # Insert attachments
+    att_base = "~/Library/Messages/Attachments"
     conn.executemany(
-        "INSERT INTO attachment (ROWID, guid, filename, mime_type, total_bytes, is_sticker, transfer_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        """INSERT INTO attachment
+        (ROWID, guid, filename, mime_type, total_bytes, is_sticker, transfer_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?)""",
         [
-            (1, "att001", "~/Library/Messages/Attachments/ab/cd/photo.jpg", "image/jpeg", 102400, 0, "photo.jpg"),
-            (2, "att002", "~/Library/Messages/Attachments/ef/gh/document.pdf", "application/pdf", 51200, 0, "document.pdf"),
-            (3, "att003", "~/Library/Messages/Attachments/ij/kl/sticker.png", "image/png", 2048, 1, "sticker.png"),
+            (1, "att001", f"{att_base}/ab/cd/photo.jpg",
+             "image/jpeg", 102400, 0, "photo.jpg"),
+            (2, "att002", f"{att_base}/ef/gh/document.pdf",
+             "application/pdf", 51200, 0, "document.pdf"),
+            (3, "att003", f"{att_base}/ij/kl/sticker.png",
+             "image/png", 2048, 1, "sticker.png"),
         ]
     )
 
@@ -311,6 +355,7 @@ def mock_region_gb(monkeypatch):
 def mock_contacts(tmp_path, monkeypatch):
     """Mock contact resolution with a temporary contacts database."""
     import sqlite3
+
     from messages.contacts import clear_contact_cache
 
     # Create a temporary contacts database
