@@ -104,7 +104,7 @@ def test_db_path(tmp_path):
             (1, "+15551234567", "iMessage"),
             (2, "+447700900123", "SMS"),
             (3, "jane@example.com", "iMessage"),
-        ]
+        ],
     )
 
     # Insert chats
@@ -115,7 +115,7 @@ def test_db_path(tmp_path):
             (1, "iMessage;-;+15551234567", "+15551234567", None, "iMessage"),
             (2, "SMS;-;+447700900123", "+447700900123", None, "SMS"),
             (3, "iMessage;-;chat123456", "chat123456", "Family Group", "iMessage"),
-        ]
+        ],
     )
 
     # Link handles to chats
@@ -127,7 +127,7 @@ def test_db_path(tmp_path):
             (3, 1),  # Group chat has handles 1, 2, 3
             (3, 2),
             (3, 3),
-        ]
+        ],
     )
 
     # Insert messages
@@ -167,7 +167,8 @@ def test_db_path(tmp_path):
         b"\x04\x0bstreamtyped\x81\xe8\x03\x84\x01\x40\x84\x84\x84\x12NSAttributedString"
         b"\x00\x84\x84\x08NSObject\x00\x85\x92\x84\x84\x84\x08NSString\x01\x94\x84\x01"
         # + marker (0x2B) + 0x81 (extended length) + 2-byte little-endian length
-        + b"\x2b\x81" + long_text_length.to_bytes(2, "little")
+        + b"\x2b\x81"
+        + long_text_length.to_bytes(2, "little")
         # The actual text
         + long_text_bytes
         # Terminator and trailing structure
@@ -179,86 +180,294 @@ def test_db_path(tmp_path):
     birthday_effect = "com.apple.messages.effect.CKHappyBirthdayEffect"
     messages = [
         # Chat 1: Regular conversation
-        (1, "msg001", "Hey, are you free for lunch?", None,
-         to_apple_time(BASE_DATE), 0, 1, 0, None, 0, None, None, None, None),
-        (2, "msg002", "Sure! Where were you thinking?", None,
-         to_apple_time(BASE_DATE + timedelta(minutes=1)), 1, None, 0,
-         None, 0, None, None, None, None),
-        (3, "msg003", "How about that new place on Main St?", None,
-         to_apple_time(BASE_DATE + timedelta(minutes=2)), 0, 1, 0,
-         None, 0, None, None, None, None),
-
+        (
+            1,
+            "msg001",
+            "Hey, are you free for lunch?",
+            None,
+            to_apple_time(BASE_DATE),
+            0,
+            1,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
+        (
+            2,
+            "msg002",
+            "Sure! Where were you thinking?",
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=1)),
+            1,
+            None,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
+        (
+            3,
+            "msg003",
+            "How about that new place on Main St?",
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=2)),
+            0,
+            1,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
         # Chat 1: Message with reaction (love reaction on msg002)
         # associated_message_type: 2000=love, 2001=like, 2002=dislike,
         # 2003=laugh, 2004=emphasis, 2005=question
-        (4, "msg004", "\ufffc", None,
-         to_apple_time(BASE_DATE + timedelta(minutes=3)), 0, 1, 0,
-         "msg002", 2000, None, None, None, None),
-
+        (
+            4,
+            "msg004",
+            "\ufffc",
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=3)),
+            0,
+            1,
+            0,
+            "msg002",
+            2000,
+            None,
+            None,
+            None,
+            None,
+        ),
         # Chat 1: Another reaction (like on msg002)
-        (5, "msg005", "\ufffc", None,
-         to_apple_time(BASE_DATE + timedelta(minutes=3, seconds=30)), 0, 1, 0,
-         "msg002", 2001, None, None, None, None),
-
+        (
+            5,
+            "msg005",
+            "\ufffc",
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=3, seconds=30)),
+            0,
+            1,
+            0,
+            "msg002",
+            2001,
+            None,
+            None,
+            None,
+            None,
+        ),
         # Chat 1: Message with effect (balloons)
-        (6, "msg006", "Happy birthday!", None,
-         to_apple_time(BASE_DATE + timedelta(minutes=5)), 1, None, 0,
-         None, 0, birthday_effect, None, None, None),
-
+        (
+            6,
+            "msg006",
+            "Happy birthday!",
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=5)),
+            1,
+            None,
+            0,
+            None,
+            0,
+            birthday_effect,
+            None,
+            None,
+            None,
+        ),
         # Chat 1: Edited message (date_edited is set to indicate it was edited)
-        (7, "msg007", "Let's meet at 12:30", None,
-         to_apple_time(BASE_DATE + timedelta(minutes=10)), 1, None, 0,
-         None, 0, None, to_apple_time(BASE_DATE + timedelta(minutes=11)),
-         None, None),
-
+        (
+            7,
+            "msg007",
+            "Let's meet at 12:30",
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=10)),
+            1,
+            None,
+            0,
+            None,
+            0,
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=11)),
+            None,
+            None,
+        ),
         # Chat 1: Retracted/unsent message (date_retracted is set)
-        (8, "msg008", None, None,
-         to_apple_time(BASE_DATE + timedelta(minutes=15)), 1, None, 0,
-         None, 0, None, None,
-         to_apple_time(BASE_DATE + timedelta(minutes=16)), None),
-
+        (
+            8,
+            "msg008",
+            None,
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=15)),
+            1,
+            None,
+            0,
+            None,
+            0,
+            None,
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=16)),
+            None,
+        ),
         # Chat 1: Message with attachment
-        (9, "msg009", "Check out this photo!", None,
-         to_apple_time(BASE_DATE + timedelta(minutes=20)), 0, 1, 1,
-         None, 0, None, None, None, None),
-
+        (
+            9,
+            "msg009",
+            "Check out this photo!",
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=20)),
+            0,
+            1,
+            1,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
         # Chat 1: Threaded reply (reply to msg003)
-        (10, "msg010", "Yes! I've heard great things about it", None,
-         to_apple_time(BASE_DATE + timedelta(minutes=25)), 1, None, 0,
-         None, 0, None, None, None, "msg003"),
-
+        (
+            10,
+            "msg010",
+            "Yes! I've heard great things about it",
+            None,
+            to_apple_time(BASE_DATE + timedelta(minutes=25)),
+            1,
+            None,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            "msg003",
+        ),
         # Chat 2: SMS conversation (for service filtering tests)
-        (11, "msg011", "Got your text!", None,
-         to_apple_time(BASE_DATE + timedelta(hours=1)), 0, 2, 0,
-         None, 0, None, None, None, None),
-        (12, "msg012", "Great, talk soon", None,
-         to_apple_time(BASE_DATE + timedelta(hours=1, minutes=5)), 1, None, 0,
-         None, 0, None, None, None, None),
-
+        (
+            11,
+            "msg011",
+            "Got your text!",
+            None,
+            to_apple_time(BASE_DATE + timedelta(hours=1)),
+            0,
+            2,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
+        (
+            12,
+            "msg012",
+            "Great, talk soon",
+            None,
+            to_apple_time(BASE_DATE + timedelta(hours=1, minutes=5)),
+            1,
+            None,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
         # Chat 3: Group chat messages
-        (13, "msg013", "Family dinner this Sunday?", None,
-         to_apple_time(BASE_DATE + timedelta(hours=2)), 0, 1, 0,
-         None, 0, None, None, None, None),
-        (14, "msg014", "I'm in!", None,
-         to_apple_time(BASE_DATE + timedelta(hours=2, minutes=10)), 0, 3, 0,
-         None, 0, None, None, None, None),
-
+        (
+            13,
+            "msg013",
+            "Family dinner this Sunday?",
+            None,
+            to_apple_time(BASE_DATE + timedelta(hours=2)),
+            0,
+            1,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
+        (
+            14,
+            "msg014",
+            "I'm in!",
+            None,
+            to_apple_time(BASE_DATE + timedelta(hours=2, minutes=10)),
+            0,
+            3,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
         # Chat 1: Message from a week ago (for date filtering)
-        (15, "msg015", "Old message from last week", None,
-         to_apple_time(BASE_DATE - timedelta(days=7)), 0, 1, 0,
-         None, 0, None, None, None, None),
-
+        (
+            15,
+            "msg015",
+            "Old message from last week",
+            None,
+            to_apple_time(BASE_DATE - timedelta(days=7)),
+            0,
+            1,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
         # Chat 1: Message with text ONLY in attributedBody (text column is NULL)
         # This tests the attributedBody extraction fallback
-        (16, "msg016", None, attributed_body_blob,
-         to_apple_time(BASE_DATE + timedelta(minutes=30)), 1, None, 0,
-         None, 0, None, None, None, None),
-
+        (
+            16,
+            "msg016",
+            None,
+            attributed_body_blob,
+            to_apple_time(BASE_DATE + timedelta(minutes=30)),
+            1,
+            None,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
         # Chat 1: Message with extended length encoding in attributedBody
         # This tests the 0x81 extended length marker
-        (17, "msg017", None, attributed_body_blob_extended,
-         to_apple_time(BASE_DATE + timedelta(minutes=31)), 1, None, 0,
-         None, 0, None, None, None, None),
+        (
+            17,
+            "msg017",
+            None,
+            attributed_body_blob_extended,
+            to_apple_time(BASE_DATE + timedelta(minutes=31)),
+            1,
+            None,
+            0,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+        ),
     ]
 
     conn.executemany(
@@ -267,19 +476,31 @@ def test_db_path(tmp_path):
             associated_message_guid, associated_message_type, expressive_send_style_id,
             date_edited, date_retracted, thread_originator_guid
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        messages
+        messages,
     )
 
     # Link messages to chats
     chat_message_joins = [
-        (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7),
-        (1, 8), (1, 9), (1, 10), (1, 15), (1, 16), (1, 17),
-        (2, 11), (2, 12),
-        (3, 13), (3, 14),
+        (1, 1),
+        (1, 2),
+        (1, 3),
+        (1, 4),
+        (1, 5),
+        (1, 6),
+        (1, 7),
+        (1, 8),
+        (1, 9),
+        (1, 10),
+        (1, 15),
+        (1, 16),
+        (1, 17),
+        (2, 11),
+        (2, 12),
+        (3, 13),
+        (3, 14),
     ]
     conn.executemany(
-        "INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)",
-        chat_message_joins
+        "INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)", chat_message_joins
     )
 
     # Insert attachments
@@ -289,23 +510,28 @@ def test_db_path(tmp_path):
         (ROWID, guid, filename, mime_type, total_bytes, is_sticker, transfer_name)
         VALUES (?, ?, ?, ?, ?, ?, ?)""",
         [
-            (1, "att001", f"{att_base}/ab/cd/photo.jpg",
-             "image/jpeg", 102400, 0, "photo.jpg"),
-            (2, "att002", f"{att_base}/ef/gh/document.pdf",
-             "application/pdf", 51200, 0, "document.pdf"),
-            (3, "att003", f"{att_base}/ij/kl/sticker.png",
-             "image/png", 2048, 1, "sticker.png"),
-        ]
+            (1, "att001", f"{att_base}/ab/cd/photo.jpg", "image/jpeg", 102400, 0, "photo.jpg"),
+            (
+                2,
+                "att002",
+                f"{att_base}/ef/gh/document.pdf",
+                "application/pdf",
+                51200,
+                0,
+                "document.pdf",
+            ),
+            (3, "att003", f"{att_base}/ij/kl/sticker.png", "image/png", 2048, 1, "sticker.png"),
+        ],
     )
 
     # Link attachments to messages
     conn.executemany(
         "INSERT INTO message_attachment_join (message_id, attachment_id) VALUES (?, ?)",
         [
-            (9, 1),   # photo attached to msg009
-            (9, 2),   # PDF also attached to msg009
+            (9, 1),  # photo attached to msg009
+            (9, 2),  # PDF also attached to msg009
             (13, 3),  # sticker in group chat
-        ]
+        ],
     )
 
     conn.commit()
@@ -325,16 +551,10 @@ def messages_db(test_db_path, monkeypatch):
         "jane@example.com": "Jane Email",
     }
     # Patch where it's used (in db.py), not where it's defined
-    monkeypatch.setattr(
-        "messages.db.get_contact_name",
-        lambda x: contact_map.get(x)
-    )
+    monkeypatch.setattr("messages.db.get_contact_name", lambda x: contact_map.get(x))
 
     # Mock system region
-    monkeypatch.setattr(
-        "messages.phone.get_system_region",
-        lambda: "US"
-    )
+    monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
 
     return messages.get_db(path=test_db_path)
 
@@ -386,9 +606,7 @@ def mock_contacts(tmp_path, monkeypatch):
     """)
 
     # Insert test contacts
-    conn.execute(
-        "INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (1, 'Jane', 'Doe')"
-    )
+    conn.execute("INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (1, 'Jane', 'Doe')")
     conn.execute(
         "INSERT INTO ZABCDPHONENUMBER (ZOWNER, ZFULLNUMBER) VALUES (1, '+1 (555) 123-4567')"
     )
@@ -396,25 +614,18 @@ def mock_contacts(tmp_path, monkeypatch):
     conn.execute(
         "INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (2, 'John', 'Smith')"
     )
-    conn.execute(
-        "INSERT INTO ZABCDPHONENUMBER (ZOWNER, ZFULLNUMBER) VALUES (2, '+44 7700 900123')"
-    )
+    conn.execute("INSERT INTO ZABCDPHONENUMBER (ZOWNER, ZFULLNUMBER) VALUES (2, '+44 7700 900123')")
 
     conn.execute(
         "INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (3, 'Jane', 'Email')"
     )
-    conn.execute(
-        "INSERT INTO ZABCDEMAILADDRESS (ZOWNER, ZADDRESS) VALUES (3, 'jane@example.com')"
-    )
+    conn.execute("INSERT INTO ZABCDEMAILADDRESS (ZOWNER, ZADDRESS) VALUES (3, 'jane@example.com')")
 
     conn.commit()
     conn.close()
 
     # Patch the database finder to return our test database
-    monkeypatch.setattr(
-        "messages.contacts._find_contacts_databases",
-        lambda: [db_path]
-    )
+    monkeypatch.setattr("messages.contacts._find_contacts_databases", lambda: [db_path])
 
     # Clear the cache so it rebuilds from our test database
     clear_contact_cache()

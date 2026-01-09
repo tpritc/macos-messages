@@ -1,6 +1,5 @@
 """Tests for contact resolution from macOS Contacts.app."""
 
-
 from messages.contacts import get_all_contacts, get_contact_name, search_contacts
 
 
@@ -48,10 +47,11 @@ class TestGetAllContacts:
     def test_get_all_contacts_empty(self, monkeypatch):
         """Should return empty list if no contacts database."""
         from messages import contacts as contacts_module
+
         monkeypatch.setattr(contacts_module, "_find_contacts_databases", lambda: [])
         monkeypatch.setattr(contacts_module, "_contact_lookup", None)
         contacts_module.clear_contact_cache()
-        
+
         contacts = get_all_contacts()
         assert contacts == []
 
@@ -115,8 +115,10 @@ class TestContactResolutionInDB:
         incoming = [m for m in msgs if not m.is_from_me and m.sender]
         assert len(incoming) > 0
         # display_name should be None or the raw identifier
-        assert incoming[0].sender.display_name is None or \
-               incoming[0].sender.display_name == incoming[0].sender.identifier
+        assert (
+            incoming[0].sender.display_name is None
+            or incoming[0].sender.display_name == incoming[0].sender.identifier
+        )
 
     def test_chat_display_name_from_contacts(self, messages_db):
         """1:1 chat display_name should come from contact resolution."""

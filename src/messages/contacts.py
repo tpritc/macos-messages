@@ -323,7 +323,4 @@ def search_contacts(query: str) -> list[Contact]:
     all_contacts = get_all_contacts()
     query_lower = query.lower()
 
-    return [
-        c for c in all_contacts
-        if c.display_name and query_lower in c.display_name.lower()
-    ]
+    return [c for c in all_contacts if c.display_name and query_lower in c.display_name.lower()]

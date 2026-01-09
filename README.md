@@ -71,7 +71,7 @@ Full documentation is available at [macos-messages.readthedocs.io](https://macos
 
 ## Requirements
 
-- macOS (tested on Sonoma 14.0+)
+- macOS
 - Python 3.12+
 - Full Disk Access permission for your terminal
 

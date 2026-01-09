@@ -50,11 +50,7 @@ class TestGlobalOptions:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: "Should Not Appear")
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--no-contacts",
-            "--chat", "1"
-        ])
+        result = runner.invoke(cli, ["--db", str(test_db_path), "--no-contacts", "--chat", "1"])
         assert result.exit_code == 0
         # With --no-contacts, should show phone number, not resolved name
         assert "+1555" in result.output or "5551234567" in result.output
@@ -92,17 +88,16 @@ class TestMessagesRoot:
     def test_messages_by_with(self, runner, test_db_path, monkeypatch):
         """--with should list messages with exact contact name match."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+
         # Only return "Jane Doe" for the specific phone number in chat 1
         def mock_contact(x):
             if x == "+15551234567":
                 return "Jane Doe"
             return None
+
         monkeypatch.setattr("messages.contacts.get_contact_name", mock_contact)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--with", "Jane Doe"
-        ])
+        result = runner.invoke(cli, ["--db", str(test_db_path), "--with", "Jane Doe"])
         assert result.exit_code == 0
         assert "lunch" in result.output.lower()
 
@@ -111,10 +106,7 @@ class TestMessagesRoot:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--with", "Unknown Person"
-        ])
+        result = runner.invoke(cli, ["--db", str(test_db_path), "--with", "Unknown Person"])
         assert result.exit_code == 0
         # Empty or no messages found
 
@@ -123,11 +115,9 @@ class TestMessagesRoot:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--chat", "1",
-            "--with", "Jane Doe"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "--chat", "1", "--with", "Jane Doe"]
+        )
         assert result.exit_code == 1
         assert "Cannot specify both --chat and --with" in result.output
 
@@ -143,18 +133,18 @@ class TestMessagesRoot:
     def test_messages_search_with_contact(self, runner, test_db_path, monkeypatch):
         """--with combined with --search should search within conversation."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
+
         # Only return "Jane Doe" for the specific phone number in chat 1
         def mock_contact(x):
             if x == "+15551234567":
                 return "Jane Doe"
             return None
+
         monkeypatch.setattr("messages.contacts.get_contact_name", mock_contact)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--with", "Jane Doe",
-            "--search", "lunch"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "--with", "Jane Doe", "--search", "lunch"]
+        )
         assert result.exit_code == 0
         assert "lunch" in result.output.lower()
 
@@ -163,10 +153,9 @@ class TestMessagesRoot:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--chat", "1", "--since", "2024-01-15"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "--chat", "1", "--since", "2024-01-15"]
+        )
         assert result.exit_code == 0
 
     def test_messages_before(self, runner, test_db_path, monkeypatch):
@@ -174,10 +163,9 @@ class TestMessagesRoot:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--chat", "1", "--before", "2024-01-16"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "--chat", "1", "--before", "2024-01-16"]
+        )
         assert result.exit_code == 0
 
     def test_messages_limit(self, runner, test_db_path, monkeypatch):
@@ -185,16 +173,13 @@ class TestMessagesRoot:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--chat", "1", "--last", "2"
-        ])
+        result = runner.invoke(cli, ["--db", str(test_db_path), "--chat", "1", "--last", "2"])
         assert result.exit_code == 0
         # Count message lines
         import re
+
         msg_lines = [
-            line for line in result.output.split("\n")
-            if re.search(r"\(\d+:\d+[ap]m\):", line)
+            line for line in result.output.split("\n") if re.search(r"\(\d+:\d+[ap]m\):", line)
         ]
         assert len(msg_lines) == 2
 
@@ -203,10 +188,9 @@ class TestMessagesRoot:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--chat", "1", "--with-attachments"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "--chat", "1", "--with-attachments"]
+        )
         assert result.exit_code == 0
         # Should only show messages with attachments
         # All displayed messages should have attachment indicators
@@ -218,10 +202,9 @@ class TestMessagesRoot:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--chat", "1", "--json", "--last", "5"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "--chat", "1", "--json", "--last", "5"]
+        )
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert isinstance(data, list)
@@ -231,10 +214,9 @@ class TestMessagesRoot:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--chat", "1", "--json", "--last", "50"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "--chat", "1", "--json", "--last", "50"]
+        )
         assert result.exit_code == 0
         data = json.loads(result.output)
 
@@ -251,14 +233,14 @@ class TestMessagesRoot:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "--chat", "1", "--json", "--last", "1"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "--chat", "1", "--json", "--last", "1"]
+        )
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert len(data) > 0
         import re
+
         assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", data[0]["date"])
 
 
@@ -279,10 +261,7 @@ class TestChatsCommand:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "chats", "--search", "Family"
-        ])
+        result = runner.invoke(cli, ["--db", str(test_db_path), "chats", "--search", "Family"])
         assert result.exit_code == 0
         assert "Family Group" in result.output
 
@@ -291,10 +270,9 @@ class TestChatsCommand:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "chats", "--search", "xyznonexistent123"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "chats", "--search", "xyznonexistent123"]
+        )
         assert result.exit_code == 0
         assert result.output.strip() == "" or "Family" not in result.output
 

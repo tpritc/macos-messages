@@ -8,30 +8,36 @@ from messages.phone import get_system_region, normalize_phone, phone_match
 class TestNormalizePhone:
     """Tests for normalize_phone function."""
 
-    @pytest.mark.parametrize("input_number,region,expected", [
-        # US formats
-        ("+15551234567", "US", "+15551234567"),       # Already E.164
-        ("5551234567", "US", "+15551234567"),         # 10-digit
-        ("555-123-4567", "US", "+15551234567"),       # Dashes
-        ("(555) 123-4567", "US", "+15551234567"),     # Parens
-        ("555.123.4567", "US", "+15551234567"),       # Dots
-        ("1-555-123-4567", "US", "+15551234567"),     # With country code
-        ("+1 555 123 4567", "US", "+15551234567"),    # Spaces
-        ("1 (555) 123-4567", "US", "+15551234567"),   # Mixed format
-    ])
+    @pytest.mark.parametrize(
+        "input_number,region,expected",
+        [
+            # US formats
+            ("+15551234567", "US", "+15551234567"),  # Already E.164
+            ("5551234567", "US", "+15551234567"),  # 10-digit
+            ("555-123-4567", "US", "+15551234567"),  # Dashes
+            ("(555) 123-4567", "US", "+15551234567"),  # Parens
+            ("555.123.4567", "US", "+15551234567"),  # Dots
+            ("1-555-123-4567", "US", "+15551234567"),  # With country code
+            ("+1 555 123 4567", "US", "+15551234567"),  # Spaces
+            ("1 (555) 123-4567", "US", "+15551234567"),  # Mixed format
+        ],
+    )
     def test_normalize_us_formats(self, input_number, region, expected, monkeypatch):
         """US phone numbers in various formats should normalize to E.164."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: region)
         assert normalize_phone(input_number) == expected
 
-    @pytest.mark.parametrize("input_number,region,expected", [
-        # UK formats
-        ("+447700900123", "GB", "+447700900123"),     # Already E.164
-        ("07700 900123", "GB", "+447700900123"),      # Local mobile
-        ("07700900123", "GB", "+447700900123"),       # No spaces
-        ("+44 7700 900123", "GB", "+447700900123"),   # International with spaces
-        ("00447700900123", "GB", "+447700900123"),    # International with 00
-    ])
+    @pytest.mark.parametrize(
+        "input_number,region,expected",
+        [
+            # UK formats
+            ("+447700900123", "GB", "+447700900123"),  # Already E.164
+            ("07700 900123", "GB", "+447700900123"),  # Local mobile
+            ("07700900123", "GB", "+447700900123"),  # No spaces
+            ("+44 7700 900123", "GB", "+447700900123"),  # International with spaces
+            ("00447700900123", "GB", "+447700900123"),  # International with 00
+        ],
+    )
     def test_normalize_uk_formats(self, input_number, region, expected, monkeypatch):
         """UK phone numbers in various formats should normalize to E.164."""
         monkeypatch.setattr("messages.phone.get_system_region", lambda: region)
@@ -66,23 +72,26 @@ class TestNormalizePhone:
 class TestPhoneMatch:
     """Tests for phone_match function."""
 
-    @pytest.mark.parametrize("query,stored,should_match", [
-        # Exact matches
-        ("+15551234567", "+15551234567", True),
-        # Local format matches E.164
-        ("555-123-4567", "+15551234567", True),
-        ("5551234567", "+15551234567", True),
-        ("(555) 123-4567", "+15551234567", True),
-        # International format matches
-        ("+1 555 123 4567", "+15551234567", True),
-        ("1-555-123-4567", "+15551234567", True),
-        # Non-matches
-        ("555-123-4567", "+15559999999", False),
-        ("555-123-4567", "+15551234568", False),  # Off by one
-        # UK numbers
-        ("07700 900123", "+447700900123", True),
-        ("+44 7700 900 123", "+447700900123", True),
-    ])
+    @pytest.mark.parametrize(
+        "query,stored,should_match",
+        [
+            # Exact matches
+            ("+15551234567", "+15551234567", True),
+            # Local format matches E.164
+            ("555-123-4567", "+15551234567", True),
+            ("5551234567", "+15551234567", True),
+            ("(555) 123-4567", "+15551234567", True),
+            # International format matches
+            ("+1 555 123 4567", "+15551234567", True),
+            ("1-555-123-4567", "+15551234567", True),
+            # Non-matches
+            ("555-123-4567", "+15559999999", False),
+            ("555-123-4567", "+15551234568", False),  # Off by one
+            # UK numbers
+            ("07700 900123", "+447700900123", True),
+            ("+44 7700 900 123", "+447700900123", True),
+        ],
+    )
     def test_phone_match(self, query, stored, should_match, monkeypatch):
         """Phone matching should handle various format combinations."""
         # Use US region by default, GB for UK numbers

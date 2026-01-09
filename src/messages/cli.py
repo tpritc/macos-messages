@@ -16,7 +16,7 @@ from messages.models import Message
 
 def json_serializer(obj: Any) -> Any:
     """JSON serializer for objects not serializable by default.
-    
+
     Datetimes are output as UTC with Z suffix (ISO 8601).
     Naive datetimes from the database are already in UTC.
     """
@@ -82,25 +82,27 @@ def format_reactions_verbose(msg: Message) -> str:
 
 def format_message(msg: Message, verbose: bool = False, attachments: list | None = None) -> str:
     """Format a message for plain text output in IRC-style format.
-    
+
     Times are displayed in the user's local timezone.
     Naive datetimes from the database are treated as UTC.
-    
+
     Args:
         msg: The message to format
         verbose: If True, show detailed reaction info
         attachments: Optional list of Attachment objects for this message
     """
-    sender = "You" if msg.is_from_me else (
-        msg.sender.display_name or msg.sender.identifier if msg.sender else "?"
+    sender = (
+        "You"
+        if msg.is_from_me
+        else (msg.sender.display_name or msg.sender.identifier if msg.sender else "?")
     )
-    
+
     # Build text with attachment indicators
     text = msg.text or ""
-    
+
     # Remove Object Replacement Character (used as placeholder for attachments)
     text = text.replace("\ufffc", "").strip()
-    
+
     # Add attachment indicator if message has attachments
     if msg.has_attachments and attachments:
         attachment_parts = []
@@ -136,7 +138,7 @@ def format_message(msg: Message, verbose: bool = False, attachments: list | None
             text = "[attachment]"
     elif not text:
         text = "(no text)"
-    
+
     if msg.transcription:
         text = f"[audio] {msg.transcription}"
 
@@ -151,7 +153,7 @@ def format_message(msg: Message, verbose: bool = False, attachments: list | None
     local_dt = utc_dt.astimezone()  # Convert to local timezone
     # Format time as 12-hour with am/pm (e.g., "1:12pm")
     time_str = local_dt.strftime("%-I:%M%p").lower()
-    
+
     line = f"{sender} ({time_str}): {text}"
     if not verbose:
         line += reactions
@@ -171,7 +173,7 @@ def format_message(msg: Message, verbose: bool = False, attachments: list | None
 
 def format_date_header(dt: datetime) -> str:
     """Format a date header like [July 3, 2025].
-    
+
     Uses local timezone for display.
     Naive datetimes from the database are treated as UTC.
     """
@@ -202,8 +204,12 @@ def format_date_header(dt: datetime) -> str:
 @click.option("--before", type=click.DateTime(), help="Before date (YYYY-MM-DD)")
 @click.option("--first", "-f", "first_n", type=int, help="Show first N messages (oldest)")
 @click.option(
-    "--last", "-l", "last_n", type=int, default=50,
-    help="Show last N messages (newest, default: 50)"
+    "--last",
+    "-l",
+    "last_n",
+    type=int,
+    default=50,
+    help="Show last N messages (newest, default: 50)",
 )
 @click.option("--with-attachments", is_flag=True, help="Only show messages with attachments")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -225,7 +231,7 @@ def cli(
     """Read messages from macOS Messages.app.
 
     Requires Full Disk Access permission for Terminal.
-    
+
     \b
     Examples:
       messages --chat 42              List messages from chat ID 42
@@ -234,12 +240,12 @@ def cli(
       messages --search "dinner"      Search all messages for "dinner"
     """
     ctx.ensure_object(dict)
-    
+
     # Check for mutually exclusive options
     if chat_id and with_contact:
         click.echo("Error: Cannot specify both --chat and --with", err=True)
         sys.exit(1)
-    
+
     # If a subcommand is being invoked, just set up the DB
     if ctx.invoked_subcommand is not None:
         try:
@@ -252,12 +258,12 @@ def cli(
             click.echo(f"Error: {e}", err=True)
             sys.exit(1)
         return
-    
+
     # If no message options provided, show help
     if not chat_id and not with_contact and not search_query:
         click.echo(ctx.get_help())
         return
-    
+
     # Initialize DB for message listing
     try:
         db_instance = messages.get_db(db)
@@ -269,7 +275,7 @@ def cli(
     except FileNotFoundError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
-    
+
     # Handle message listing
     _list_messages(
         ctx,
@@ -287,14 +293,14 @@ def cli(
 
 def _resolve_chat_id(db: "messages.MessagesDB", chat_id_or_name: str) -> int:
     """Resolve a chat ID or display name to a numeric chat ID.
-    
+
     Args:
         db: The database instance
         chat_id_or_name: Either a numeric ID or a display name
-        
+
     Returns:
         The numeric chat ID
-        
+
     Raises:
         click.ClickException: If chat not found or multiple matches
     """
@@ -303,44 +309,42 @@ def _resolve_chat_id(db: "messages.MessagesDB", chat_id_or_name: str) -> int:
         return int(chat_id_or_name)
     except ValueError:
         pass
-    
+
     # Search for chat by display name
     all_chats = list(db.chats(limit=1000))
     matches = [
-        c for c in all_chats
-        if c.display_name and chat_id_or_name.lower() in c.display_name.lower()
+        c for c in all_chats if c.display_name and chat_id_or_name.lower() in c.display_name.lower()
     ]
-    
+
     if not matches:
         raise click.ClickException(f"Chat '{chat_id_or_name}' not found")
-    
+
     # Check for exact match first
     exact_matches = [
-        c for c in matches
-        if c.display_name and c.display_name.lower() == chat_id_or_name.lower()
+        c for c in matches if c.display_name and c.display_name.lower() == chat_id_or_name.lower()
     ]
     if len(exact_matches) == 1:
         return exact_matches[0].id
-    
+
     if len(matches) > 1:
         match_list = "\n".join(f"  {c.id}: {c.display_name}" for c in matches[:10])
         raise click.ClickException(
             f"Multiple chats match '{chat_id_or_name}':\n{match_list}\n\nUse the chat ID instead."
         )
-    
+
     return matches[0].id
 
 
 def _resolve_contact_chat_ids(db: "messages.MessagesDB", contact_name: str) -> list[int]:
     """Resolve a contact name to all matching chat IDs.
-    
+
     A contact may have multiple conversations (e.g., different phone numbers,
     iMessage vs SMS). This returns all chat IDs for that contact.
-    
+
     Args:
         db: The database instance
         contact_name: The exact contact name to find
-        
+
     Returns:
         List of chat IDs for conversations with that contact (may be empty)
     """
@@ -367,10 +371,10 @@ def _list_messages(
 ) -> None:
     """List or search messages based on provided options."""
     db = ctx.obj["db"]
-    
+
     resolved_chat_id = None
     resolved_chat_ids = None
-    
+
     # Resolve chat ID from --chat option
     if chat_id:
         try:
@@ -378,7 +382,7 @@ def _list_messages(
         except click.ClickException as e:
             click.echo(f"Error: {e.message}", err=True)
             sys.exit(1)
-    
+
     # Resolve chat IDs from --with option (may return multiple chats for same contact)
     if with_contact:
         resolved_chat_ids = _resolve_contact_chat_ids(db, with_contact)
@@ -387,7 +391,7 @@ def _list_messages(
             if as_json:
                 click.echo("[]")
             return
-    
+
     # Determine limit and direction
     # If --first is specified, use it (oldest first)
     # Otherwise use --last (newest first, the default)
@@ -397,10 +401,10 @@ def _list_messages(
     else:
         limit = last_n
         reverse = True
-    
+
     # Fetch more if filtering by attachments, since we filter after
     fetch_limit = limit * 10 if with_attachments else limit
-    
+
     if search_query:
         results = list(
             db.search(
@@ -429,11 +433,11 @@ def _list_messages(
         # When showing last N (reverse), re-reverse so messages appear in chronological order
         if reverse:
             results = list(reversed(results))
-    
+
     # Filter to only messages with attachments if requested
     if with_attachments:
         results = [m for m in results if m.has_attachments][:limit]
-    
+
     if as_json:
         output = [message_to_dict(m, db) for m in results]
         click.echo(json.dumps(output, default=json_serializer, indent=2))
@@ -474,14 +478,13 @@ def chats(
     db_service = service_map.get(service.lower()) if service else None
 
     results = list(db.chats(service=db_service, limit=limit if not search_query else 1000))
-    
+
     # Filter by display name if search provided
     if search_query:
         query_lower = search_query.lower()
-        results = [
-            c for c in results
-            if c.display_name and query_lower in c.display_name.lower()
-        ][:limit]
+        results = [c for c in results if c.display_name and query_lower in c.display_name.lower()][
+            :limit
+        ]
 
     if as_json:
         click.echo(json.dumps([asdict(c) for c in results], default=json_serializer, indent=2))

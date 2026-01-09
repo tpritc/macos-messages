@@ -103,8 +103,14 @@ class TestMessageEffect:
         from messages.models import MessageEffect
 
         screen_effects = [
-            "echo", "spotlight", "balloons", "confetti",
-            "love_effect", "lasers", "fireworks", "celebration"
+            "echo",
+            "spotlight",
+            "balloons",
+            "confetti",
+            "love_effect",
+            "lasers",
+            "fireworks",
+            "celebration",
         ]
         for effect in screen_effects:
             assert any(e.value == effect for e in MessageEffect)
@@ -118,10 +124,7 @@ class TestHandle:
         from messages.models import Handle
 
         handle = Handle(
-            id=1,
-            identifier="+15551234567",
-            service="iMessage",
-            display_name="Jane Doe"
+            id=1, identifier="+15551234567", service="iMessage", display_name="Jane Doe"
         )
         assert handle.id == 1
         assert handle.identifier == "+15551234567"
@@ -132,12 +135,7 @@ class TestHandle:
         """display_name should be optional."""
         from messages.models import Handle
 
-        handle = Handle(
-            id=1,
-            identifier="+15551234567",
-            service="iMessage",
-            display_name=None
-        )
+        handle = Handle(id=1, identifier="+15551234567", service="iMessage", display_name=None)
         assert handle.display_name is None
 
 
@@ -191,11 +189,7 @@ class TestChat:
         from messages.models import Chat
 
         chat = Chat(
-            id=1,
-            identifier="+15551234567",
-            display_name=None,
-            service="iMessage",
-            participants=[]
+            id=1, identifier="+15551234567", display_name=None, service="iMessage", participants=[]
         )
         assert chat.id == 1
         assert chat.service == "iMessage"
@@ -214,7 +208,7 @@ class TestChatSummary:
             display_name="Jane",
             service="iMessage",
             message_count=42,
-            last_message_date=datetime.now()
+            last_message_date=datetime.now(),
         )
         assert summary.message_count == 42
         assert summary.last_message_date is not None
@@ -234,7 +228,7 @@ class TestAttachment:
             mime_type="image/jpeg",
             path="/path/to/photo.jpg",
             size=1024,
-            is_sticker=False
+            is_sticker=False,
         )
         assert att.filename == "photo.jpg"
         assert att.size == 1024
@@ -248,11 +242,7 @@ class TestReaction:
         from messages.models import Handle, Reaction, ReactionType
 
         handle = Handle(id=1, identifier="+15551234567", service="iMessage", display_name="Jane")
-        reaction = Reaction(
-            type=ReactionType.LOVE,
-            sender=handle,
-            date=datetime.now()
-        )
+        reaction = Reaction(type=ReactionType.LOVE, sender=handle, date=datetime.now())
         assert reaction.type == ReactionType.LOVE
         assert reaction.sender.display_name == "Jane"
 
@@ -264,9 +254,6 @@ class TestEditRecord:
         """Should create EditRecord with text and date."""
         from messages.models import EditRecord
 
-        edit = EditRecord(
-            text="Original text",
-            date=datetime.now()
-        )
+        edit = EditRecord(text="Original text", date=datetime.now())
         assert edit.text == "Original text"
         assert edit.date is not None

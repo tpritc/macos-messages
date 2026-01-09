@@ -444,9 +444,7 @@ class MessagesDB:
         Raises:
             LookupError: If no matching chat found
         """
-        cursor = self.conn.execute(
-            "SELECT ROWID, chat_identifier FROM chat"
-        )
+        cursor = self.conn.execute("SELECT ROWID, chat_identifier FROM chat")
 
         for row in cursor:
             if phone_match(identifier, row["chat_identifier"], self.region):

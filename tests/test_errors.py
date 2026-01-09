@@ -106,10 +106,7 @@ class TestCLIErrors:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "999999"
-        ])
+        result = runner.invoke(cli, ["--db", str(test_db_path), "messages", "--chat", "999999"])
         assert result.exit_code != 0
         assert "not found" in result.output.lower() or "error" in result.output.lower()
 
@@ -118,10 +115,7 @@ class TestCLIErrors:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "read", "999999"
-        ])
+        result = runner.invoke(cli, ["--db", str(test_db_path), "read", "999999"])
         assert result.exit_code != 0
 
     def test_cli_invalid_phone_number(self, runner, test_db_path, monkeypatch):
@@ -129,10 +123,9 @@ class TestCLIErrors:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--with", "not-a-phone"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "messages", "--with", "not-a-phone"]
+        )
         assert result.exit_code != 0
         output_lower = result.output.lower()
         assert "phone" in output_lower or "parse" in output_lower or "error" in output_lower
@@ -148,10 +141,7 @@ class TestCLIErrors:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "chats", "--service", "invalid"
-        ])
+        result = runner.invoke(cli, ["--db", str(test_db_path), "chats", "--service", "invalid"])
         # Click should reject invalid choice
         assert result.exit_code != 0
 
@@ -160,10 +150,9 @@ class TestCLIErrors:
         monkeypatch.setattr("messages.phone.get_system_region", lambda: "US")
         monkeypatch.setattr("messages.contacts.get_contact_name", lambda x: None)
 
-        result = runner.invoke(cli, [
-            "--db", str(test_db_path),
-            "messages", "--chat", "1", "--after", "not-a-date"
-        ])
+        result = runner.invoke(
+            cli, ["--db", str(test_db_path), "messages", "--chat", "1", "--after", "not-a-date"]
+        )
         assert result.exit_code != 0
 
 
@@ -174,12 +163,13 @@ class TestEdgeCases:
         """Should handle chat with no messages gracefully."""
         # Add an empty chat to the test database
         import sqlite3
+
         conn = sqlite3.connect(test_db_path)
         conn.execute(
             """INSERT INTO chat
             (ROWID, guid, chat_identifier, display_name, service_name)
             VALUES (?, ?, ?, ?, ?)""",
-            (99, "empty-chat", "empty@example.com", "Empty Chat", "iMessage")
+            (99, "empty-chat", "empty@example.com", "Empty Chat", "iMessage"),
         )
         conn.commit()
         conn.close()
