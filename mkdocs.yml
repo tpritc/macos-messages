@@ -1,6 +1,6 @@
 site_name: macos-messages
 site_description: Python library and CLI for reading macOS Messages.app data
-site_url: https://tpritc.github.io/macos-messages
+site_url: https://macos-messages.readthedocs.io
 repo_url: https://github.com/tpritc/macos-messages
 repo_name: tpritc/macos-messages
 

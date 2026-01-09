@@ -17,22 +17,7 @@ The key thing is that it's **read-only**. macos-messages can't send messages, mo
 
 ## What it looks like
 
-```python
-import messages
-
-db = messages.get_db()
-
-# Get your recent conversations
-for chat in db.chats(limit=5):
-    print(f"{chat.display_name}: {chat.message_count} messages")
-
-# Read messages from a specific chat
-for msg in db.messages(chat_id=42, limit=10):
-    sender = "me" if msg.is_from_me else msg.sender.display_name
-    print(f"{sender}: {msg.text}")
-```
-
-Or from the command line:
+From the command line:
 
 ```bash
 # List your conversations
@@ -49,23 +34,40 @@ messages --with "Mom"
 messages --search "dinner tomorrow"
 ```
 
+Or in Python:
+
+```python
+import messages
+
+db = messages.get_db()
+
+# Get your recent conversations
+for chat in db.chats(limit=5):
+    print(f"{chat.display_name}: {chat.message_count} messages")
+
+# Read messages from a specific chat
+for msg in db.messages(chat_id=42, limit=10):
+    sender = "me" if msg.is_from_me else msg.sender.display_name
+    print(f"{sender}: {msg.text}")
+```
+
 ## Installation
 
 ```bash
 uv tool install macos-messages
 ```
 
-You'll need to grant Full Disk Access to your terminal app before this will work. See the [Permissions](https://tpritc.github.io/macos-messages/permissions/) guide for instructions.
+You'll need to grant Full Disk Access to your terminal app before this will work. See the [Permissions](https://macos-messages.readthedocs.io/permissions/) guide for instructions.
 
 ## Documentation
 
-Full documentation is available at [tpritc.github.io/macos-messages](https://tpritc.github.io/macos-messages/), including:
+Full documentation is available at [macos-messages.readthedocs.io](https://macos-messages.readthedocs.io/), including:
 
-- [Installation](https://tpritc.github.io/macos-messages/installation/) - Getting set up
-- [Quickstart](https://tpritc.github.io/macos-messages/quickstart/) - Your first queries
-- [CLI Reference](https://tpritc.github.io/macos-messages/cli/) - All the commands
-- [Python Library](https://tpritc.github.io/macos-messages/library/) - Full API docs
-- [Permissions](https://tpritc.github.io/macos-messages/permissions/) - macOS permissions explained
+- [Installation](https://macos-messages.readthedocs.io/installation/) - Getting set up
+- [Quickstart](https://macos-messages.readthedocs.io/quickstart/) - Your first queries
+- [CLI Reference](https://macos-messages.readthedocs.io/cli/) - All the commands
+- [Python Library](https://macos-messages.readthedocs.io/library/) - Full API docs
+- [Permissions](https://macos-messages.readthedocs.io/permissions/) - macOS permissions explained
 
 ## Requirements
 
