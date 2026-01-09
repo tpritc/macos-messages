@@ -6,8 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
-    { name = "Tom Pritchard" }
+    { name = "Tom Pritchard", email = "tom@tpritc.com" }
 ]
+keywords = ["imessage", "sms", "rcs", "macos", "messages", "chat", "sqlite"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
