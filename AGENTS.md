@@ -71,3 +71,48 @@ Tests use a mock database created in `tests/conftest.py` with the `test_db_path`
 - **AGENTS.md** - Update if changing architecture, adding new modules, or modifying development workflows
 
 Before completing any PR or significant change, ask: "Would a user or developer need to know about this change?" If yes, update the relevant docs.
+
+## Release Process
+
+To release a new version:
+
+1. **Update version numbers** in both files:
+   - `pyproject.toml`: `version = "X.Y.Z"`
+   - `src/messages/__init__.py`: `__version__ = "X.Y.Z"`
+
+2. **Update CHANGELOG.md** with the new version section:
+   ```markdown
+   ## [X.Y.Z] - YYYY-MM-DD
+
+   ### Added
+   - New features...
+
+   ### Changed
+   - Changes to existing functionality...
+
+   ### Fixed
+   - Bug fixes...
+   ```
+   Add the release link at the bottom: `[X.Y.Z]: https://github.com/tpritc/macos-messages/releases/tag/vX.Y.Z`
+
+3. **Commit the version bump**
+
+4. **Create and push the tag**:
+   ```bash
+   git tag -a vX.Y.Z -m "Release X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+5. **Create GitHub release** (include section headings like `### Changed` for consistency):
+   ```bash
+   gh release create vX.Y.Z --title "X.Y.Z" --notes "### Changed
+
+   - First change
+   - Second change"
+   ```
+
+6. **Build and publish to PyPI**:
+   ```bash
+   uv build
+   uv publish --token "$(op read 'op://Private/PyPI/api token' --account my.1password.com)"
+   ```
