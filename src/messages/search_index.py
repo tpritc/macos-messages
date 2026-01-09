@@ -6,6 +6,7 @@ allow read-only access to the original data while maintaining a local index.
 
 The index supports:
 - Full-text search with FTS5 (tokenization, boolean queries, phrase matching)
+- Stemmed search using Snowball stemmer (matches word variants)
 - Incremental updates (only index new messages)
 - Relevance ranking with BM25
 
@@ -17,7 +18,12 @@ Usage:
     index = SearchIndex()
     index.build(db)  # Build or update the index
 
+    # Basic search (exact word matching)
     results = index.search("dinner plans")
+
+    # Stemmed search (matches "running", "runner", "runs" for "run")
+    results = index.search("running", stemmed=True)
+
     for result in results:
         print(f"Message {result.message_id}: {result.snippet}")
 """
@@ -98,6 +104,15 @@ class SearchIndex:
             )
         """)
 
+        # Create a separate FTS5 table for stemmed text
+        # This enables matching word variants (run/running/runs)
+        cursor.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts_stemmed USING fts5(
+                text,
+                tokenize='unicode61 remove_diacritics 2'
+            )
+        """)
+
         # Metadata table to track indexed messages
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS indexed_messages (
@@ -106,7 +121,8 @@ class SearchIndex:
                 date INTEGER NOT NULL,
                 is_from_me INTEGER NOT NULL,
                 text TEXT,
-                fts_rowid INTEGER NOT NULL
+                fts_rowid INTEGER NOT NULL,
+                fts_stemmed_rowid INTEGER
             )
         """)
 
@@ -224,23 +240,35 @@ class SearchIndex:
 
     def _index_batch(self, messages: list[dict]) -> None:
         """Index a batch of messages."""
+        from .text_processing import process_text_for_index, STEMMER_AVAILABLE
+
         cursor = self.conn.cursor()
 
         for msg in messages:
-            # Insert into FTS5 table
+            # Insert into FTS5 table (plain text)
             cursor.execute(
                 "INSERT INTO messages_fts(text) VALUES (?)",
                 (msg["text"],)
             )
             fts_rowid = cursor.lastrowid
 
+            # Insert into stemmed FTS5 table
+            fts_stemmed_rowid = None
+            if STEMMER_AVAILABLE:
+                stemmed_text = process_text_for_index(msg["text"])
+                cursor.execute(
+                    "INSERT INTO messages_fts_stemmed(text) VALUES (?)",
+                    (stemmed_text,)
+                )
+                fts_stemmed_rowid = cursor.lastrowid
+
             # Insert into metadata table
             cursor.execute(
                 """INSERT INTO indexed_messages
-                   (message_id, chat_id, date, is_from_me, text, fts_rowid)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (message_id, chat_id, date, is_from_me, text, fts_rowid, fts_stemmed_rowid)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (msg["message_id"], msg["chat_id"], msg["date"],
-                 msg["is_from_me"], msg["text"], fts_rowid)
+                 msg["is_from_me"], msg["text"], fts_rowid, fts_stemmed_rowid)
             )
 
         self.conn.commit()
@@ -248,10 +276,17 @@ class SearchIndex:
     def _clear_index(self) -> None:
         """Clear the entire index."""
         cursor = self.conn.cursor()
-        # Drop and recreate FTS table for clean rebuild
+        # Drop and recreate FTS tables for clean rebuild
         cursor.execute("DROP TABLE IF EXISTS messages_fts")
         cursor.execute("""
             CREATE VIRTUAL TABLE messages_fts USING fts5(
+                text,
+                tokenize='unicode61 remove_diacritics 2'
+            )
+        """)
+        cursor.execute("DROP TABLE IF EXISTS messages_fts_stemmed")
+        cursor.execute("""
+            CREATE VIRTUAL TABLE messages_fts_stemmed USING fts5(
                 text,
                 tokenize='unicode61 remove_diacritics 2'
             )
@@ -268,6 +303,7 @@ class SearchIndex:
         after: Optional[datetime] = None,
         before: Optional[datetime] = None,
         limit: int = 50,
+        stemmed: bool = False,
     ) -> Iterator[SearchResult]:
         """Search the index using full-text search.
 
@@ -278,28 +314,40 @@ class SearchIndex:
             after: Only messages after this date
             before: Only messages before this date
             limit: Maximum results (default 50)
+            stemmed: If True, use stemmed search for better word variant matching
 
         Yields:
             SearchResult objects ordered by relevance
         """
         from .models import datetime_to_apple_time
 
+        # Process query for stemmed search if requested
+        search_query = query
+        if stemmed:
+            from .text_processing import process_query_for_search, STEMMER_AVAILABLE
+            if STEMMER_AVAILABLE:
+                search_query = process_query_for_search(query)
+
+        # Choose the appropriate FTS table
+        fts_table = "messages_fts_stemmed" if stemmed else "messages_fts"
+        fts_rowid_col = "fts_stemmed_rowid" if stemmed else "fts_rowid"
+
         # Build the query
         # We join FTS results with our metadata table
-        sql = """
+        sql = f"""
             SELECT
                 im.message_id,
                 im.chat_id,
                 im.text,
                 im.date,
                 im.is_from_me,
-                snippet(messages_fts, 0, '>>>', '<<<', '...', 32) as snippet,
-                bm25(messages_fts) as rank
-            FROM messages_fts
-            JOIN indexed_messages im ON messages_fts.rowid = im.fts_rowid
-            WHERE messages_fts MATCH ?
+                snippet({fts_table}, 0, '>>>', '<<<', '...', 32) as snippet,
+                bm25({fts_table}) as rank
+            FROM {fts_table}
+            JOIN indexed_messages im ON {fts_table}.rowid = im.{fts_rowid_col}
+            WHERE {fts_table} MATCH ?
         """
-        params: list = [query]
+        params: list = [search_query]
 
         # Apply filters
         if chat_ids:
@@ -364,6 +412,8 @@ class SearchIndex:
         Returns:
             Dictionary with index statistics
         """
+        from .text_processing import get_stemmer_info
+
         indexed_count = self._get_indexed_count()
         last_date = self._get_last_indexed_date()
 
@@ -372,6 +422,7 @@ class SearchIndex:
             "last_indexed_date": apple_time_to_datetime(last_date) if last_date else None,
             "index_path": str(self.path),
             "index_size_bytes": self.path.stat().st_size if self.path.exists() else 0,
+            "stemmer": get_stemmer_info(),
         }
 
     def close(self) -> None:

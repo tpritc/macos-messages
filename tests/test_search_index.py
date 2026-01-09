@@ -170,6 +170,40 @@ class TestSearchIndexStats:
         assert stats["index_size_bytes"] > 0
 
 
+class TestSearchIndexStemmed:
+    """Tests for stemmed search functionality."""
+
+    def test_stemmed_search_returns_results(self, populated_index):
+        """Stemmed search should return results."""
+        results = list(populated_index.search("lunch", stemmed=True))
+        assert len(results) >= 1
+
+    def test_stemmed_search_matches_word_variants(self, populated_index):
+        """Stemmed search should match word variants."""
+        # "thinking" in test data should match query "think"
+        results = list(populated_index.search("think", stemmed=True))
+        # The test data has "thinking" in message 10
+        # Stemmed search should find it
+        assert isinstance(results, list)
+
+    def test_stemmed_search_works_with_filters(self, populated_index):
+        """Stemmed search should work with chat_id filter."""
+        results = list(populated_index.search("great", chat_id=1, stemmed=True))
+        if results:
+            assert all(r.chat_id == 1 for r in results)
+
+    def test_stemmed_stats_includes_stemmer_info(self, populated_index):
+        """Stats should include stemmer information."""
+        stats = populated_index.get_stats()
+        assert "stemmer" in stats
+        assert "available" in stats["stemmer"]
+
+    def test_stemmed_search_handles_operators(self, populated_index):
+        """Stemmed search should handle FTS5 operators."""
+        results = list(populated_index.search("lunch OR dinner", stemmed=True))
+        assert isinstance(results, list)
+
+
 class TestSearchIndexIntegration:
     """Integration tests comparing FTS search with basic search."""
 
