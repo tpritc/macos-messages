@@ -107,6 +107,10 @@ def format_message(msg: Message, verbose: bool = False, attachments: list | None
     if msg.has_attachments and attachments:
         attachment_parts = []
         for att in attachments:
+            # Skip plugin payload attachments (link previews) in human-readable output
+            att_file = att.filename or att.path or ""
+            if att_file.endswith(".pluginPayloadAttachment"):
+                continue
             # Determine attachment type from mime_type
             if att.mime_type:
                 if att.mime_type.startswith("image/"):
@@ -143,6 +147,9 @@ def format_message(msg: Message, verbose: bool = False, attachments: list | None
         text = f"[audio] {msg.transcription}"
 
     reactions = format_reactions_verbose(msg) if verbose else format_reactions_compact(msg)
+
+    # Final cleanup of whitespace
+    text = text.strip()
 
     # Convert UTC to local time for display
     # Naive datetimes from the Messages database are in UTC
