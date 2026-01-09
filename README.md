@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/header.png" alt="macos-messages viewing the last 4 messages from a contact named Nick Wangler. The messages are an excited discussion about a new AI product release." />
+</p>
+
 # macos-messages
 
 macos-messages is a Python library and CLI for reading your macOS Messages.app data. It gives you quick, easy, read-only access to your iMessage and SMS history.
@@ -57,17 +61,17 @@ for msg in db.messages(chat_id=42, limit=10):
 uv tool install macos-messages
 ```
 
-You'll need to grant Full Disk Access to your terminal app before this will work. See the [Permissions](https://macos-messages.readthedocs.io/permissions/) guide for instructions.
+You'll need to grant Full Disk Access to your terminal app before this will work. See the [Permissions](https://macos-messages.readthedocs.io/en/latest/permissions/) guide for instructions.
 
 ## Documentation
 
-Full documentation is available at [macos-messages.readthedocs.io](https://macos-messages.readthedocs.io/), including:
+Full documentation is available at [macos-messages.readthedocs.io](https://macos-messages.readthedocs.io/en/latest/), including:
 
-- [Installation](https://macos-messages.readthedocs.io/installation/) - Getting set up
-- [Quickstart](https://macos-messages.readthedocs.io/quickstart/) - Your first queries
-- [CLI Reference](https://macos-messages.readthedocs.io/cli/) - All the commands
-- [Python Library](https://macos-messages.readthedocs.io/library/) - Full API docs
-- [Permissions](https://macos-messages.readthedocs.io/permissions/) - macOS permissions explained
+- [Installation](https://macos-messages.readthedocs.io/en/latest/installation/) - Getting set up
+- [Quickstart](https://macos-messages.readthedocs.io/en/latest/quickstart/) - Your first queries
+- [CLI Reference](https://macos-messages.readthedocs.io/en/latest/cli/) - All the commands
+- [Python Library](https://macos-messages.readthedocs.io/en/latest/library/) - Full API docs
+- [Permissions](https://macos-messages.readthedocs.io/en/latest/permissions/) - macOS permissions explained
 
 ## Requirements
 
